@@ -46,7 +46,7 @@ function formatKrw(value: number) {
 type SortKey = "premium" | "roundTrip" | "cmcDev" | "coin" | "risk";
 type SortDir = "desc" | "asc";
 
-function Sparkline({ data }: { data: number[] }) {
+function Sparkline({ data, zScore }: { data: number[]; zScore?: number }) {
   if (data.length < 2) return <span className="text-zinc-600 text-[10px]">-</span>;
   const min = Math.min(...data);
   const max = Math.max(...data);
@@ -59,11 +59,32 @@ function Sparkline({ data }: { data: number[] }) {
     return `${x},${y}`;
   }).join(" ");
   const positive = data[data.length - 1] >= data[0];
+  const zColor = zScore === undefined ? "text-zinc-600"
+    : Math.abs(zScore) >= 2 ? "text-red-400"
+    : Math.abs(zScore) >= 1 ? "text-amber-400"
+    : "text-zinc-600";
   return (
-    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} className="inline-block">
-      <polyline fill="none" stroke={positive ? "#34d399" : "#38bdf8"} strokeWidth="1.5" points={points} />
-    </svg>
+    <div className="inline-flex flex-col items-center gap-0.5">
+      <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} className="inline-block">
+        <polyline fill="none" stroke={positive ? "#34d399" : "#38bdf8"} strokeWidth="1.5" points={points} />
+      </svg>
+      {zScore !== undefined && (
+        <span className={`text-[9px] font-mono ${zColor}`} title={`Z-Score ${(zScore >= 0 ? "+" : "")}${zScore.toFixed(2)}σ`}>
+          {(zScore >= 0 ? "+" : "")}{zScore.toFixed(1)}σ
+        </span>
+      )}
+    </div>
   );
+}
+
+function computeZScore(points: { premium: number }[] | undefined): number | undefined {
+  if (!points || points.length < 5) return undefined;
+  const values = points.map(p => p.premium);
+  const mean = values.reduce((a, b) => a + b, 0) / values.length;
+  const variance = values.reduce((a, b) => a + (b - mean) ** 2, 0) / values.length;
+  const std = Math.sqrt(variance);
+  if (std < 0.0001) return undefined;
+  return (values[values.length - 1] - mean) / std;
 }
 
 export default function KimchiView() {
@@ -73,6 +94,7 @@ export default function KimchiView() {
   const [fxRate, setFxRate] = useState(1350);
   const [search, setSearch] = useState("");
   const [verifiedOnly, setVerifiedOnly] = useState(false);
+  const [reverseOnly, setReverseOnly] = useState(false);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [walletMap, setWalletMap] = useState<Map<string, { wallet_state: string; block_state: string; message: string }>>(new Map());
@@ -248,6 +270,7 @@ export default function KimchiView() {
     return items
       .filter(item => {
         if (verifiedOnly && !item.verified) return false;
+        if (reverseOnly && item.premiumPct > -0.5) return false;
         if (minVolume > 0 && (item.volumeKrw ?? 0) < minVolume) return false;
         const query = search.trim().toLowerCase();
         if (!query) return true;
@@ -265,7 +288,7 @@ export default function KimchiView() {
         if (Number.isNaN(diff)) return 0;
         return sortDir === "desc" ? diff : -diff;
       });
-  }, [items, search, verifiedOnly, favorites, sortKey, sortDir, walletMap, history, topMovers]);
+  }, [items, search, verifiedOnly, reverseOnly, favorites, sortKey, sortDir, walletMap, history, topMovers]);
 
   return (
     <>
@@ -312,6 +335,21 @@ export default function KimchiView() {
             <option value={1_000_000_000}>{t("kimchi.filter.volume1b")}</option>
             <option value={10_000_000_000}>{t("kimchi.filter.volume10b")}</option>
           </select>
+          <label className="flex items-center gap-2 text-xs cursor-pointer select-none" title={lang === "ko" ? "업비트가 글로벌보다 -0.5% 이상 싼 역프리미엄 코인만 — 저가 매수 스캔" : "Only coins where Upbit trades ≥0.5% below global — discount scanner"}>
+            <button
+              onClick={() => {
+                const next = !reverseOnly;
+                setReverseOnly(next);
+                if (next) { setSortKey("premium"); setSortDir("asc"); }
+              }}
+              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${reverseOnly ? "bg-sky-600" : "bg-zinc-700"}`}
+            >
+              <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${reverseOnly ? "translate-x-[18px]" : "translate-x-1"}`} />
+            </button>
+            <span className={reverseOnly ? "text-sky-300 font-medium" : "text-zinc-400"}>
+              {lang === "ko" ? "역프리미엄 세일" : "Reverse premium"}
+            </span>
+          </label>
           <label className="flex items-center gap-2 text-xs text-zinc-400 cursor-pointer select-none" title={lang === "ko" ? "Binance와 CoinMarketCap 가격 오차가 5% 이내인 페어만 표시" : "Show only pairs where Binance and CMC prices agree within 5%"}>
             <button onClick={() => setVerifiedOnly(value => !value)} className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${verifiedOnly ? "bg-emerald-600" : "bg-zinc-700"}`}>
               <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${verifiedOnly ? "translate-x-[18px]" : "translate-x-1"}`} />
@@ -406,7 +444,7 @@ export default function KimchiView() {
                     ) : "-"}
                   </td>
                   <td className="text-center px-2 py-2.5">
-                    <Sparkline data={(history[item.coin] ?? []).map(point => point.premium)} />
+                    <Sparkline data={(history[item.coin] ?? []).map(point => point.premium)} zScore={computeZScore(history[item.coin])} />
                   </td>
                   <td className="text-right px-4 py-2.5 font-mono text-zinc-200" title={item.upbitAsk ? (lang === "ko" ? `매수 Ask: ${formatKrw(item.upbitAsk)} / 매도 Bid: ${formatKrw(item.upbitBid ?? item.upbitKrw)}` : `Ask: ${formatKrw(item.upbitAsk)} / Bid: ${formatKrw(item.upbitBid ?? item.upbitKrw)}`) : undefined}>
                     {formatKrw(item.upbitKrw)}

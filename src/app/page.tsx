@@ -9,12 +9,14 @@ import CalculatorView from "@/components/CalculatorView";
 import SimulatorView from "@/components/SimulatorView";
 import CexCexView from "@/components/CexCexView";
 import TrendingView from "@/components/TrendingView";
+import SniperView from "@/components/SniperView";
 import { LangProvider, useLang } from "@/lib/i18n";
 
 const TAB_DEFS = [
   { id: "kimchi" as const, labelKey: "tab.kimchi.label", titleKey: "tab.kimchi.title", descKey: "tab.kimchi.desc" },
   { id: "arbitrage" as const, labelKey: "tab.arbitrage.label", titleKey: "tab.arbitrage.title", descKey: "tab.arbitrage.desc" },
   { id: "cex" as const, labelKey: "tab.cex.label", titleKey: "tab.cex.title", descKey: "tab.cex.desc" },
+  { id: "sniper" as const, labelKey: "tab.sniper.label", titleKey: "tab.sniper.title", descKey: "tab.sniper.desc" },
   { id: "compare" as const, labelKey: "tab.compare.label", titleKey: "tab.compare.title", descKey: "tab.compare.desc" },
   { id: "trending" as const, labelKey: "tab.trending.label", titleKey: "tab.trending.title", descKey: "tab.trending.desc" },
   { id: "calculator" as const, labelKey: "tab.calculator.label", titleKey: "tab.calculator.title", descKey: "tab.calculator.desc" },
@@ -68,6 +70,7 @@ function HomeInner() {
         {tab === "kimchi" && <KimchiView />}
         {tab === "arbitrage" && <DexArbitrageView />}
         {tab === "cex" && <CexCexView />}
+        {tab === "sniper" && <SniperView />}
         {tab === "compare" && <DexCompareView />}
         {tab === "trending" && <TrendingView />}
         {tab === "calculator" && <CalculatorView />}
