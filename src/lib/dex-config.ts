@@ -304,10 +304,12 @@ export const CHAIN_DEXES: ChainDexes[] = [
     chain: "bsc",
     dexes: [
       {
-        name: "PancakeSwap V2",
-        routerAddress: "0x10ED43C718714eb63d5aA57B78B54704E256024E",
-        type: "uniswap-v2",
-        feeTiers: [2500],
+        name: "PancakeSwap V3",
+        quoterAddress: "0x78D78E420Da98ad378D7799BE8f4AF69033EB077",
+        quoterVersion: "v2",
+        routerAddress: "0x13f4EA83D0bd40E75C8222255bc855a974568Dd4",
+        type: "uniswap-v3",
+        feeTiers: [100, 500, 2500, 10000],
       },
       {
         name: "PancakeSwap V2",

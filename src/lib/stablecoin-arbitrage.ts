@@ -1,3 +1,5 @@
+import { UPBIT_TRADING_FEE_PCT, CEX_TRADING_FEES } from "./calculator-config";
+
 export interface UsdtRoundTripResult {
   coin: string;
   investmentKrw: number;
@@ -28,8 +30,8 @@ export function evaluateUpbitUsdtRoundTrips(
   const upbitUsdtUsd = prices.USDT?.upbit;
   if (!upbitUsdtUsd || upbitUsdtUsd <= 0) return [];
 
-  const UPBIT_FEE_PCT = 0.05;
-  const BINANCE_FEE_PCT = 0.1;
+  const UPBIT_FEE_PCT = UPBIT_TRADING_FEE_PCT;
+  const BINANCE_FEE_PCT = CEX_TRADING_FEES.binance;
   const USDT_WITHDRAWAL_FEE = 1;
   const COIN_WITHDRAWAL_USD = 2;
   const upbitUsdtKrwPrice = upbitUsdtUsd * krwUsdRate;

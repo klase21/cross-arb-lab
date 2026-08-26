@@ -52,7 +52,8 @@ export async function getSushiQuote(
 }
 
 // Public interface key shipped with app.uniswap.org's own web client.
-const UNISWAP_API_KEY = "JoyCGj29tT4pymvhaGciK4r1aIPvqW6W53xT1fwo";
+// Override via UNISWAP_API_KEY or NEXT_PUBLIC_UNISWAP_API_KEY env var.
+const UNISWAP_API_KEY = process.env.UNISWAP_API_KEY ?? process.env.NEXT_PUBLIC_UNISWAP_API_KEY ?? "JoyCGj29tT4pymvhaGciK4r1aIPvqW6W53xT1fwo";
 const UNISWAP_SWAPPER = "0x7f2b81F37dFe7b92863bE79bBF59cdbe90417CF2";
 
 interface UniswapQuoteResponse {

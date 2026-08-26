@@ -1,19 +1,12 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { getUsdKrwRate } from "@/lib/fx";
+import { UPBIT_TRADING_FEE_PCT, WITHDRAWAL_FEES, GAS_COSTS_USD, DEX_SWAP_FEES, BRIDGE_FEES } from "@/lib/calculator-config";
 
-const UPBIT_FEE_PCT = 0.05;
-const WITHDRAWAL_FEES: Record<string, number> = {
-  ethereum: 0.0017, arbitrum: 0.0017, polygon: 0.0017, base: 0.0017, optimism: 0.0017, bsc: 0.0005
-};
-const GAS_COSTS_USD: Record<string, number> = {
-  ethereum: 8, arbitrum: 0.15, polygon: 0.01, base: 0.05, optimism: 0.08, bsc: 0.25
-};
-const DEX_SWAP_FEES_PCT: Record<string, number> = {
-  ethereum: 0.3, arbitrum: 0.3, polygon: 0.3, base: 0.3, optimism: 0.3, bsc: 0.25
-};
-const BRIDGE_FEE_PCT = 0.05;
+const UPBIT_FEE_PCT = UPBIT_TRADING_FEE_PCT;
+const DEX_SWAP_FEES_PCT = DEX_SWAP_FEES;
+const BRIDGE_FEE_PCT = BRIDGE_FEES.ethereum ?? 0.05;
 
 export default function CalculatorView() {
   const [prices, setPrices] = useState<Record<string, number>>({});

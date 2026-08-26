@@ -51,24 +51,41 @@ export async function scanChainPair(chainId: ChainId, baseSymbol: string, quoteS
   return { chainId, pair: pairKey, quotes };
 }
 
+const SCAN_CONCURRENCY = Number(process.env.SCAN_CONCURRENCY ?? 8);
+
+async function runWithConcurrency<T>(tasks: (() => Promise<T>)[], limit: number): Promise<T[]> {
+  const results: T[] = new Array(tasks.length);
+  let index = 0;
+  async function worker() {
+    while (true) {
+      const current = index++;
+      if (current >= tasks.length) return;
+      results[current] = await tasks[current]();
+    }
+  }
+  const workers = Array.from({ length: Math.min(limit, tasks.length) }, () => worker());
+  await Promise.all(workers);
+  return results;
+}
+
 export async function scanAllChains(): Promise<Map<string, ChainQuoteResult[]>> {
   const results = new Map<string, ChainQuoteResult[]>();
 
-  const allPromises: Promise<void>[] = [];
+  const tasks: (() => Promise<void>)[] = [];
   for (const chainDexes of CHAIN_DEXES) {
     for (const { base: baseSym, quote: quoteSym } of chainDexes.pairs) {
       const pairKey = `${baseSym}/${quoteSym}`;
       if (!results.has(pairKey)) results.set(pairKey, []);
-      const promise = scanChainPair(chainDexes.chain, baseSym, quoteSym).then(result => {
+      tasks.push(async () => {
+        const result = await scanChainPair(chainDexes.chain, baseSym, quoteSym);
         if (result.quotes.length > 0) {
           const existing = results.get(pairKey)!;
           existing.push(result);
         }
       });
-      allPromises.push(promise);
     }
   }
-  await Promise.all(allPromises);
+  await runWithConcurrency(tasks, SCAN_CONCURRENCY);
   return results;
 }
 

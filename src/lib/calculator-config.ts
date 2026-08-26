@@ -88,3 +88,19 @@ export const BRIDGE_FEES: Record<string, number> = {
 
 // Upbit trading fee (maker/taker both 0.05%)
 export const UPBIT_TRADING_FEE_PCT = 0.05;
+
+// Centralized trading fees per CEX (percentage)
+export const CEX_TRADING_FEES: Record<string, number> = {
+  upbit: 0.05,
+  bithumb: 0.1,
+  binance: 0.1,
+  bybit: 0.1,
+  okx: 0.1,
+};
+
+// Fallback gas estimate when per-chain value is unavailable
+export const DEFAULT_GAS_ESTIMATE_USD = 5;
+
+// Single-value bridge fee percentage for generic cross-chain spread math (matches BRIDGE_FEES per-chain)
+export const SINGLE_BRIDGE_FEE_PCT = 0.05;
+export const MIN_NET_SPREAD_PCT = 0.15;

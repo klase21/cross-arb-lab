@@ -1,15 +1,13 @@
-import { WITHDRAWAL_FEES, GAS_COSTS_USD, DEX_SWAP_FEES } from "./calculator-config";
+import { WITHDRAWAL_FEES, GAS_COSTS_USD, DEX_SWAP_FEES, UPBIT_TRADING_FEE_PCT, SINGLE_BRIDGE_FEE_PCT, MIN_NET_SPREAD_PCT, DEFAULT_GAS_ESTIMATE_USD } from "./calculator-config";
+import type { ChainId } from "./dex-config";
 import { getUsdKrwRateSync } from "./fx";
 import { calculateRoundTrip } from "./price-scanner";
 import type { RoundTripResult } from "./types";
 import type { DexSpotPrice } from "./types";
 import type { ArbitrageOpportunity, ChainQuoteResult, ScanResult, CostBreakdown, FlowStep } from "./types";
-const GAS_ESTIMATE_USD = 5;
-const BRIDGE_FEE_PCT = 0.1;
-const MIN_NET_SPREAD_PCT = 0.15;
-
-
-const UPBIT_FEE_PCT = 0.05;
+const GAS_ESTIMATE_USD = DEFAULT_GAS_ESTIMATE_USD;
+const BRIDGE_FEE_PCT = SINGLE_BRIDGE_FEE_PCT;
+const UPBIT_FEE_PCT = UPBIT_TRADING_FEE_PCT;
 
 
 const UPBIT_SYMBOL_MAP: Record<string, string> = {
@@ -53,7 +51,7 @@ export function calculateCostBreakdown(input: CostCalcInput): CostBreakdown {
   const swapFeePct = DEX_SWAP_FEES[buyChain] ?? 0.3;
   const isCrossChain = input.buyChain !== input.sellChain;
   const totalSwapFeesPct = isCrossChain ? swapFeePct * 2 : swapFeePct;
-  const bridgeFeePct = isCrossChain ? 0.05 : 0;
+  const bridgeFeePct = isCrossChain ? SINGLE_BRIDGE_FEE_PCT : 0;
   const totalOnchainFeesPct = totalSwapFeesPct + bridgeFeePct;
   const onchainFeeKrw = tokensReceived * approxKrwPrice * (totalOnchainFeesPct / 100);
   const gasCostKrw = gasCostUsd * getUsdKrwRateSync();
@@ -431,12 +429,13 @@ export function buildScanResult(
 export async function enrichWithRoundTrips(opportunities: ArbitrageOpportunity[]): Promise<ArbitrageOpportunity[]> {
   const enriched = await Promise.all(opportunities.map(async opp => {
     try {
-      const [baseSymbol] = opp.pair.split("/");
+      const [baseSymbol] = opp.pair.split("/"); // keep for parity, used indirectly via pairKey
+      void baseSymbol;
       const rt = await calculateRoundTrip({
         pairKey: opp.pair,
-        buyChainId: opp.buyChain as any,
+        buyChainId: opp.buyChain as ChainId,
         buyDexName: opp.buyDex,
-        sellChainId: opp.sellChain as any,
+        sellChainId: opp.sellChain as ChainId,
         sellDexName: opp.sellDex,
       });
       if (!rt) return opp;
@@ -473,12 +472,12 @@ export async function enrichWithSpotPrices(opportunities: ArbitrageOpportunity[]
       
       // Get spot price on buy DEX
       const buySpot = await getSpotPrices(
-        opp.buyChain as any, opp.buyDex, baseSymbol, quoteSymbol
+        opp.buyChain as ChainId, opp.buyDex, baseSymbol, quoteSymbol
       );
       
       // Get spot price on sell DEX
       const sellSpot = await getSpotPrices(
-        opp.sellChain as any, opp.sellDex, baseSymbol, quoteSymbol
+        opp.sellChain as ChainId, opp.sellDex, baseSymbol, quoteSymbol
       );
       
       if (!buySpot || !sellSpot) return opp;

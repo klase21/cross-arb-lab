@@ -1,5 +1,4 @@
 import { encodeFunctionData, parseAbi } from "viem";
-import type { ChainId } from "./dex-config";
 import type { ExecutionChainId } from "./wallet";
 
 export const TESTNET = {
@@ -77,6 +76,8 @@ function errorDetail(error: unknown): string {
 }
 void errorDetail;
 
+const UNISWAP_API_KEY = process.env.UNISWAP_API_KEY ?? process.env.NEXT_PUBLIC_UNISWAP_API_KEY ?? "JoyCGj29tT4pymvhaGciK4r1aIPvqW6W53xT1fwo";
+
 /** Uniswap Labs gateway — builds the executable swap transaction. */
 export async function fetchUniswapSwapTx(params: {
   numericChainId: number;
@@ -88,7 +89,7 @@ export async function fetchUniswapSwapTx(params: {
 }): Promise<RawSwapTx> {
   const response = await fetch("https://entry-gateway.backend-prod.api.uniswap.org/swap", {
     method: "POST",
-    headers: { ...BROWSER_HEADERS, "x-api-key": "JoyCGj29tT4pymvhaGciK4r1aIPvqW6W53xT1fwo", "x-request-source": "uniswap-web", origin: "https://app.uniswap.org", referer: "https://app.uniswap.org/" },
+    headers: { ...BROWSER_HEADERS, "x-api-key": UNISWAP_API_KEY, "x-request-source": "uniswap-web", origin: "https://app.uniswap.org", referer: "https://app.uniswap.org/" },
     body: JSON.stringify({
       amount: params.amountRaw.toString(),
       type: "EXACT_INPUT",

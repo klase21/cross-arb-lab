@@ -5,11 +5,15 @@ import KimchiView from "@/components/KimchiView";
 import DexArbitrageView from "@/components/DexArbitrageView";
 import DexCompareView from "@/components/DexCompareView";
 import SettingsView from "@/components/SettingsView";
+import CalculatorView from "@/components/CalculatorView";
+import SimulatorView from "@/components/SimulatorView";
 
 const TABS = [
   { id: "kimchi", label: "Kimchi", title: "Kimchi Premium Tracker", desc: "All Upbit KRW pairs vs global price, with per-pair round-trip P&L" },
   { id: "arbitrage", label: "DEX Arbitrage", title: "Upbit → DEX Arbitrage", desc: "Buy on Upbit, withdraw, sell on-chain — live web-quote prices" },
   { id: "compare", label: "DEX Compare", title: "DEX Price Compare", desc: "Live Uniswap & Sushi web-quote APIs compared across chains" },
+  { id: "calculator", label: "Calculator", title: "Profit Calculator", desc: "Investment, fees and break-even simulation for a chosen coin and chain" },
+  { id: "simulator", label: "Simulator", title: "Timing Simulator", desc: "Step-by-step execution timing and bottleneck analysis for any route" },
   { id: "settings", label: "Settings", title: "Settings", desc: "Scanner display and behavior preferences" },
 ] as const;
 
@@ -54,6 +58,8 @@ export default function Home() {
         {tab === "kimchi" && <KimchiView />}
         {tab === "arbitrage" && <DexArbitrageView />}
         {tab === "compare" && <DexCompareView />}
+        {tab === "calculator" && <CalculatorView />}
+        {tab === "simulator" && <SimulatorView />}
         {tab === "settings" && <SettingsView />}
       </main>
     </div>

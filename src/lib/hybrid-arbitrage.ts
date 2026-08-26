@@ -1,4 +1,5 @@
-import type { ChainQuoteResult, DexQuote } from "./types";
+import type { ChainQuoteResult } from "./types";
+import { UPBIT_TRADING_FEE_PCT, CEX_TRADING_FEES } from "./calculator-config";
 
 export interface HybridArbOpportunity {
   coin: string; // what we buy on DEX (e.g. ETH)
@@ -41,8 +42,8 @@ export function findHybridOpportunities(
 ): HybridArbOpportunity[] {
   const opportunities: HybridArbOpportunity[] = [];
 
-  const UPBIT_FEE_PCT = 0.05;   // buying USDT on Upbit
-  const BINANCE_FEE_PCT = 0.1;  // selling coin on Binance
+  const UPBIT_FEE_PCT = UPBIT_TRADING_FEE_PCT;   // buying USDT on Upbit
+  const BINANCE_FEE_PCT = CEX_TRADING_FEES.binance;  // selling coin on Binance
   const WITHDRAWAL_USD = 3;     // total withdrawal fees (USDT + coin)
   const GAS_USD = 2;            // average gas for one swap
   const INVESTMENT = 1000;

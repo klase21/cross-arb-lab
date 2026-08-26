@@ -10,7 +10,8 @@ export interface CexArbitrageOpportunity {
   detectedAt: string;
 }
 
-const CEX_FEES: Record<string, number> = { upbit: 0.05, bithumb: 0.1, binance: 0.1, bybit: 0.1, okx: 0.1 };
+import { CEX_TRADING_FEES } from "./calculator-config";
+const CEX_FEES = CEX_TRADING_FEES;
 const WITHDRAWAL_FEE_USD = 2;
 
 export function findCexOpportunities(prices: Record<string, Record<string, number>>): CexArbitrageOpportunity[] {
