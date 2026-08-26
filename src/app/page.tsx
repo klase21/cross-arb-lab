@@ -9,8 +9,6 @@ import CalculatorView from "@/components/CalculatorView";
 import SimulatorView from "@/components/SimulatorView";
 import CexCexView from "@/components/CexCexView";
 import { LangProvider, useLang } from "@/lib/i18n";
-import { useDisplayCurrency } from "@/lib/use-currency";
-import { loadSettings, saveSettings } from "@/components/SettingsView";
 
 const TAB_DEFS = [
   { id: "kimchi" as const, labelKey: "tab.kimchi.label", titleKey: "tab.kimchi.title", descKey: "tab.kimchi.desc" },
@@ -26,8 +24,7 @@ type TabId = (typeof TAB_DEFS)[number]["id"];
 
 function HomeInner() {
   const [tab, setTab] = useState<TabId>("kimchi");
-  const { lang, setLang, t } = useLang();
-  const displayCurrency = useDisplayCurrency();
+  const { t } = useLang();
 
   const TABS = TAB_DEFS.map(d => ({ id: d.id, label: t(d.labelKey), title: t(d.titleKey), desc: t(d.descKey) }));
   const HIDDEN_TABS = new Set<TabId>(["calculator", "simulator"]);
@@ -53,46 +50,7 @@ function HomeInner() {
             <h1 className="text-xl font-bold tracking-tight">{current.title}</h1>
             <p className="text-xs text-zinc-500 mt-0.5">{current.desc}</p>
           </div>
-          <div className="flex items-center gap-3 self-start">
-            <div className="flex rounded-lg border border-zinc-700 overflow-hidden text-xs">
-              <button
-                onClick={() => setLang("ko")}
-                className={`px-3 py-2 transition-colors ${lang === "ko" ? "bg-zinc-100 text-zinc-900 font-medium" : "bg-zinc-900 text-zinc-400 hover:text-zinc-200"}`}
-              >
-                KO
-              </button>
-              <button
-                onClick={() => setLang("en")}
-                className={`px-3 py-2 transition-colors ${lang === "en" ? "bg-zinc-100 text-zinc-900 font-medium" : "bg-zinc-900 text-zinc-400 hover:text-zinc-200"}`}
-              >
-                EN
-              </button>
-            </div>
-            <div className="flex rounded-lg border border-zinc-700 overflow-hidden text-xs">
-              <button
-                onClick={() => {
-                  const next = "KRW" as const;
-                  const s = loadSettings();
-                  saveSettings({ ...s, displayCurrency: next });
-                }}
-                className={`px-3 py-2 transition-colors ${displayCurrency === "KRW" ? "bg-emerald-600 text-white font-medium" : "bg-zinc-900 text-zinc-400 hover:text-zinc-200"}`}
-                title={lang === "ko" ? "수익을 원화로 표시" : "Show profit in KRW"}
-              >
-                ₩ KRW
-              </button>
-              <button
-                onClick={() => {
-                  const next = "USD" as const;
-                  const s = loadSettings();
-                  saveSettings({ ...s, displayCurrency: next });
-                }}
-                className={`px-3 py-2 transition-colors ${displayCurrency === "USD" ? "bg-emerald-600 text-white font-medium" : "bg-zinc-900 text-zinc-400 hover:text-zinc-200"}`}
-                title={lang === "ko" ? "수익을 달러로 표시" : "Show profit in USD"}
-              >
-                $ USD
-              </button>
-            </div>
-            <nav className="flex rounded-lg border border-zinc-700 overflow-hidden text-sm">
+            <nav className="flex rounded-lg border border-zinc-700 overflow-hidden text-sm self-start">
               {VISIBLE_TABS.map(item => (
                 <button
                   key={item.id}
@@ -103,7 +61,6 @@ function HomeInner() {
                 </button>
               ))}
             </nav>
-          </div>
         </div>
 
         {tab === "kimchi" && <KimchiView />}

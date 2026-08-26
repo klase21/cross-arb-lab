@@ -50,7 +50,7 @@ export function saveSettings(s: AppSettings) {
 }
 
 export default function SettingsView() {
-  const { t } = useLang();
+  const { t, lang, setLang } = useLang();
   const [s, setS] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [saved, setSaved] = useState(false);
   const [permission, setPermission] = useState<NotificationPermission | "unsupported">("default");
@@ -88,7 +88,26 @@ export default function SettingsView() {
   };
 
   return (
-    <div className="max-w-2xl">
+    <div className="max-w-2xl mx-auto">
+      <section className="rounded-xl border border-zinc-800 p-6 mb-6">
+        <h2 className="text-base font-semibold mb-1">{t("settings.language")}</h2>
+        <p className="text-xs text-zinc-500 mb-3">{t("settings.languageDesc")}</p>
+        <div className="flex rounded-lg border border-zinc-700 overflow-hidden w-fit">
+          <button
+            onClick={() => setLang("ko")}
+            className={`px-4 py-2 text-sm transition-colors ${lang === "ko" ? "bg-emerald-600 text-white" : "bg-zinc-900 text-zinc-400 hover:text-zinc-200"}`}
+          >
+            {t("lang.ko")}
+          </button>
+          <button
+            onClick={() => setLang("en")}
+            className={`px-4 py-2 text-sm transition-colors ${lang === "en" ? "bg-emerald-600 text-white" : "bg-zinc-900 text-zinc-400 hover:text-zinc-200"}`}
+          >
+            {t("lang.en")}
+          </button>
+        </div>
+      </section>
+
       <section className="rounded-xl border border-zinc-800 p-6 mb-6">
         <h2 className="text-base font-semibold mb-4">{t("settings.liveData")}</h2>
         <div>
