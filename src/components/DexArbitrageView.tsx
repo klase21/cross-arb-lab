@@ -198,11 +198,11 @@ export default function DexArbitrageView() {
         </div>
       )}
 
-      {/* Stablecoin DEX-to-DEX cross-chain spreads — same card style as above */}
+      {/* Stablecoin DEX-to-DEX cross-chain spreads — unified loading via single API call */}
       <div className="mt-8">
-        {(data?.stableArbs?.length ?? 0) === 0 ? (
+        {!data ? null : (data.stableArbs?.length ?? 0) === 0 ? (
           <div className="rounded-xl border border-zinc-800 p-6 text-center text-sm text-zinc-500">
-            {loading ? <span className="animate-pulse">{t("dexArb.stable.loading")}</span> : t("dexArb.stable.empty")}
+            {t("dexArb.stable.empty")}
           </div>
         ) : (
           <div className="space-y-3">
