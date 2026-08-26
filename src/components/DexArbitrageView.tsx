@@ -362,8 +362,12 @@ function OpportunityCard({ opp, fmtUsd, fmtPct, fmtPrice, fxRate, walletMap, inv
   const inventoryNetKrw = opp.costBreakdown && inventoryMode
     ? opp.costBreakdown.netProfitKrw + opp.costBreakdown.withdrawalFeeKrw + opp.costBreakdown.gasCostKrw + (opp.isCrossChain ? opp.costBreakdown.onchainFeeKrw * 0.08 : 0)
     : null;
+  const detailHref = `/opportunity/${encodeURIComponent(`${opp.pair}|${opp.buyChain}|${opp.sellChain}`)}`;
   return (
-    <div className={`rounded-xl border p-5 cursor-pointer select-none transition-all ${opp.isCrossChain ? "border-violet-800/60 bg-gradient-to-r from-violet-950/20 to-zinc-900/80 hover:border-violet-600" : "border-emerald-900/50 bg-gradient-to-r from-emerald-950/30 to-zinc-900/80 hover:border-emerald-700"}`}>
+    <div
+      onClick={() => { window.location.href = detailHref; }}
+      className={`rounded-xl border p-5 cursor-pointer select-none transition-all ${opp.isCrossChain ? "border-violet-800/60 bg-gradient-to-r from-violet-950/20 to-zinc-900/80 hover:border-violet-600" : "border-emerald-900/50 bg-gradient-to-r from-emerald-950/30 to-zinc-900/80 hover:border-emerald-700"}`}
+    >
       <div className="flex items-start justify-between mb-3 flex-wrap gap-2">
         <div className="flex items-center gap-2 flex-wrap">
           <div>
@@ -557,6 +561,15 @@ function OpportunityCard({ opp, fmtUsd, fmtPct, fmtPrice, fxRate, walletMap, inv
           </div>
         </div>
       )}
+      <div className="mt-3 pt-3 border-t border-zinc-800/60 flex justify-end">
+        <a
+          href={detailHref}
+          onClick={e => e.stopPropagation()}
+          className="text-xs text-emerald-400 hover:text-emerald-300 hover:underline"
+        >
+          {lang === "ko" ? "상세 시나리오 보기 →" : "View detailed scenario →"}
+        </a>
+      </div>
     </div>
   );
 }
