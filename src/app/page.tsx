@@ -10,13 +10,13 @@ import SimulatorView from "@/components/SimulatorView";
 import CexCexView from "@/components/CexCexView";
 
 const TABS = [
-  { id: "kimchi", label: "Kimchi", title: "Kimchi Premium Tracker", desc: "All Upbit KRW pairs vs global price, with per-pair round-trip P&L" },
-  { id: "arbitrage", label: "DEX Arbitrage", title: "Upbit → DEX Arbitrage", desc: "Buy on Upbit, withdraw, sell on-chain — live web-quote prices" },
-  { id: "cex", label: "CEX Arbitrage", title: "CEX → CEX (보유자산)", desc: "No on-chain move — hold inventory on both CEXes, instant hedge (Upbit·Bithumb·Binance·Bybit·OKX)" },
-  { id: "compare", label: "DEX Compare", title: "DEX Price Compare", desc: "Live Uniswap & Sushi web-quote APIs compared across chains" },
-  { id: "calculator", label: "Calculator", title: "Profit Calculator", desc: "Investment, fees and break-even simulation for a chosen coin and chain" },
-  { id: "simulator", label: "Simulator", title: "Timing Simulator", desc: "Step-by-step execution timing and bottleneck analysis for any route" },
-  { id: "settings", label: "Settings", title: "Settings", desc: "Scanner display and behavior preferences" },
+  { id: "kimchi", label: "김치 프리미엄", title: "김치 프리미엄", desc: "업비트 전 종목 vs 글로벌 시세 — 오더북·CMC 검증·라운드트립 수익" },
+  { id: "arbitrage", label: "출금 차익", title: "출금 차익", desc: "업비트 매수 → 출금 → DEX 매도 — 브릿지·가스 포함 실제 수익" },
+  { id: "cex", label: "보유 차익", title: "보유 차익", desc: "양 거래소 보유 가정 — 출금 없이 즉시 양방향 체결 (Upbit·Bithumb·Binance·Bybit·OKX)" },
+  { id: "compare", label: "시세 비교", title: "시세 비교", desc: "Uniswap·Sushi 호가를 6개 체인에서 비교" },
+  { id: "calculator", label: "수익 계산기", title: "수익 계산기", desc: "투자금·수수료·손익분기 시뮬레이션" },
+  { id: "simulator", label: "실행 시뮬", title: "실행 시뮬레이터", desc: "단계별 소요시간·병목 분석" },
+  { id: "settings", label: "설정", title: "설정", desc: "갱신주기·알림·위험 가중치" },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
