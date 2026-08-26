@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "verify": "tsc --noEmit && next build",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "next": "16.3.2",
