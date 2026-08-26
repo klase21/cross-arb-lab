@@ -5,6 +5,7 @@ import { simulateTiming } from "@/lib/timing-simulator";
 import { usePollingInterval } from "@/lib/use-polling";
 import { scoreDexArb, riskColor, riskBarColor } from "@/lib/risk-scorer";
 import { useLang } from "@/lib/i18n";
+import { useDisplayCurrency } from "@/lib/use-currency";
 
 interface ArbitrageOpportunity {
   pair: string;
@@ -308,6 +309,7 @@ function OpportunityCard({ opp, fmtUsd, fmtPct, fmtPrice, fxRate, walletMap, inv
   opp: ArbitrageOpportunity; fmtUsd: (n: number) => string; fmtPct: (n: number) => string; fmtPrice: (n: number) => string; fxRate: number; walletMap: Map<string, { wallet_state: string; block_state: string; message: string }>; inventoryMode?: boolean;
 }) {
   const { t, lang } = useLang();
+  const displayCurrency = useDisplayCurrency();
   const isDexToUpbit = opp.direction === "dexToUpbit";
 
   // Compute expected execution time for this opportunity (also validates the coin-chain combo)
@@ -399,30 +401,59 @@ function OpportunityCard({ opp, fmtUsd, fmtPct, fmtPrice, fxRate, walletMap, inv
             inventoryMode && inventoryNetKrw !== null ? (
               <>
                 <p className={inventoryNetKrw >= 0 ? "text-lg font-bold text-emerald-400" : "text-lg font-bold text-red-400"}>
-                  {(inventoryNetKrw >= 0 ? "+" : "")}${(Math.abs(inventoryNetKrw / fxRate)).toFixed(2)}
+                  {displayCurrency === "USD"
+                    ? `${inventoryNetKrw >= 0 ? "+" : ""}$${(Math.abs(inventoryNetKrw) / (fxRate || 1350)).toFixed(2)}`
+                    : `${inventoryNetKrw >= 0 ? "+" : ""}${Math.round(inventoryNetKrw).toLocaleString()} KRW`}
                 </p>
-                <p className="text-xs text-emerald-500">보유 가정 · 출금/브릿지 제외</p>
-                <p className="text-[10px] text-zinc-600 line-through">출금 포함: {(opp.costBreakdown.netProfitKrw >= 0 ? "+" : "")}${(Math.abs(opp.costBreakdown.netProfitKrw / fxRate)).toFixed(2)}</p>
+                <p className="text-xs text-emerald-500">{lang === "ko" ? "보유 가정 · 출금/브릿지 제외" : "Inventory · excl. withdraw/bridge"}</p>
+                <p className="text-[10px] text-zinc-600 line-through">
+                  {lang === "ko" ? "출금 포함: " : "With withdraw: "}
+                  {displayCurrency === "USD"
+                    ? `${opp.costBreakdown.netProfitKrw >= 0 ? "+" : ""}$${(Math.abs(opp.costBreakdown.netProfitKrw) / (fxRate || 1350)).toFixed(2)}`
+                    : `${opp.costBreakdown.netProfitKrw >= 0 ? "+" : ""}${Math.round(opp.costBreakdown.netProfitKrw).toLocaleString()} KRW`}
+                </p>
+                <p className="text-[10px] text-zinc-500">
+                  {displayCurrency === "USD"
+                    ? `${Math.round(inventoryNetKrw).toLocaleString()} KRW`
+                    : `$${(inventoryNetKrw / (fxRate || 1350)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                </p>
               </>
             ) : (
               <>
                 <p className={opp.costBreakdown.netProfitKrw >= 0 ? "text-lg font-bold text-emerald-400" : "text-lg font-bold text-red-400"}>
-                  {(opp.costBreakdown.netProfitKrw >= 0 ? "+" : "")}${(Math.abs(opp.costBreakdown.netProfitKrw / fxRate)).toFixed(2)}
+                  {displayCurrency === "USD"
+                    ? `${opp.costBreakdown.netProfitKrw >= 0 ? "+" : ""}$${(Math.abs(opp.costBreakdown.netProfitKrw) / (fxRate || 1350)).toFixed(2)}`
+                    : `${opp.costBreakdown.netProfitKrw >= 0 ? "+" : ""}${Math.round(opp.costBreakdown.netProfitKrw).toLocaleString()} KRW`}
                 </p>
                 <p className={opp.costBreakdown.roiPct >= 0 ? "text-xs text-emerald-500" : "text-xs text-red-500"}>ROI: {opp.costBreakdown.roiPct.toFixed(3)}% &middot; Net profit</p>
-                <p className="text-[10px] text-zinc-600 mt-0.5">after all fees</p>
+                <p className="text-[10px] text-zinc-600 mt-0.5">
+                  {displayCurrency === "USD"
+                    ? `${Math.round(opp.costBreakdown.netProfitKrw).toLocaleString()} KRW`
+                    : `$${(opp.costBreakdown.netProfitKrw / (fxRate || 1350)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                </p>
               </>
             )
           ) : inventoryMode && inventoryProfitUsd !== null ? (
             <>
-              <p className="text-lg font-bold text-emerald-400">{fmtUsd(inventoryProfitUsd)}</p>
-              <p className="text-xs text-emerald-500">보유 가정 · 브릿지 제외</p>
-              <p className="text-[10px] text-zinc-600 line-through">출금 포함: {fmtUsd(opp.estimatedProfitUsd)}</p>
+              <p className="text-lg font-bold text-emerald-400">
+                {displayCurrency === "USD" ? fmtUsd(inventoryProfitUsd) : `${Math.round(inventoryProfitUsd * (fxRate || 1350)).toLocaleString()} KRW`}
+              </p>
+              <p className="text-xs text-emerald-500">{lang === "ko" ? "보유 가정 · 브릿지 제외" : "Inventory · excl. bridge"}</p>
+              <p className="text-[10px] text-zinc-600 line-through">
+                {lang === "ko" ? "출금 포함: " : "With withdraw: "}{displayCurrency === "USD" ? fmtUsd(opp.estimatedProfitUsd) : `${Math.round(opp.estimatedProfitUsd * (fxRate || 1350)).toLocaleString()} KRW`}
+              </p>
             </>
           ) : (
             <>
-              <p className="text-lg font-bold text-emerald-400">{fmtUsd(opp.estimatedProfitUsd)}</p>
-              <p className="text-xs text-zinc-500">est. profit / $1,000 trade</p>
+              <p className="text-lg font-bold text-emerald-400">
+                {displayCurrency === "USD" ? fmtUsd(opp.estimatedProfitUsd) : `${Math.round(opp.estimatedProfitUsd * (fxRate || 1350)).toLocaleString()} KRW`}
+              </p>
+              <p className="text-xs text-zinc-500">{displayCurrency === "USD" ? "est. profit / $1,000 trade" : "예상 수익 / 100만원 거래"}</p>
+              <p className="text-[10px] text-zinc-600">
+                {displayCurrency === "USD"
+                  ? `${Math.round(opp.estimatedProfitUsd * (fxRate || 1350)).toLocaleString()} KRW`
+                  : fmtUsd(opp.estimatedProfitUsd)}
+              </p>
             </>
           )}
         </div>

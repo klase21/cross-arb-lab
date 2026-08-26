@@ -3,8 +3,11 @@
 import { useState, useEffect } from "react";
 import { useLang } from "@/lib/i18n";
 
+export type DisplayCurrency = "KRW" | "USD";
+
 export interface AppSettings {
   refreshIntervalSec: number; // polling interval for all live views
+  displayCurrency: DisplayCurrency; // profit display currency, independent of lang
   notifyEnabled: boolean;
   kimchiThresholdPct: number;      // kimchi premium % to trigger alert
   roundTripThresholdPct: number;   // round-trip net profit % to trigger alert
@@ -19,6 +22,7 @@ export interface AppSettings {
 
 export const DEFAULT_SETTINGS: AppSettings = {
   refreshIntervalSec: 30,
+  displayCurrency: "KRW",
   notifyEnabled: false,
   kimchiThresholdPct: 2,
   roundTripThresholdPct: 0.8,
@@ -91,6 +95,25 @@ export default function SettingsView() {
           <label className="block text-sm text-zinc-400 mb-1">{t("settings.refreshInterval")}: <strong>{s.refreshIntervalSec}s</strong></label>
           <input type="range" min={10} max={120} step={5} value={s.refreshIntervalSec} onChange={e => update({ refreshIntervalSec: Number(e.target.value) })} className="w-full accent-emerald-500" />
           <p className="text-xs text-zinc-600 mt-1">{t("settings.refreshIntervalDesc")}</p>
+        </div>
+      </section>
+
+      <section className="rounded-xl border border-zinc-800 p-6 mb-6">
+        <h2 className="text-base font-semibold mb-1">{t("settings.displayCurrency")}</h2>
+        <p className="text-xs text-zinc-500 mb-3">{t("settings.displayCurrencyDesc")}</p>
+        <div className="flex rounded-lg border border-zinc-700 overflow-hidden w-fit">
+          <button
+            onClick={() => update({ displayCurrency: "KRW" })}
+            className={`px-4 py-2 text-sm transition-colors ${s.displayCurrency === "KRW" ? "bg-emerald-600 text-white" : "bg-zinc-900 text-zinc-400 hover:text-zinc-200"}`}
+          >
+            {t("settings.currency.KRW")}
+          </button>
+          <button
+            onClick={() => update({ displayCurrency: "USD" })}
+            className={`px-4 py-2 text-sm transition-colors ${s.displayCurrency === "USD" ? "bg-emerald-600 text-white" : "bg-zinc-900 text-zinc-400 hover:text-zinc-200"}`}
+          >
+            {t("settings.currency.USD")}
+          </button>
         </div>
       </section>
 

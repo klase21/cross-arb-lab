@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePollingInterval } from "@/lib/use-polling";
 import { scoreKimchi, riskColor } from "@/lib/risk-scorer";
 import { useLang } from "@/lib/i18n";
+import { useDisplayCurrency } from "@/lib/use-currency";
 
 interface KimchiItem {
   coin: string;
@@ -67,6 +68,7 @@ function Sparkline({ data }: { data: number[] }) {
 
 export default function KimchiView() {
   const { t, lang } = useLang();
+  const displayCurrency = useDisplayCurrency();
   const [items, setItems] = useState<KimchiItem[]>([]);
   const [fxRate, setFxRate] = useState(1350);
   const [search, setSearch] = useState("");
@@ -468,8 +470,17 @@ export default function KimchiView() {
                   <td className={`text-right px-4 py-2.5 pr-5 font-mono ${!trip ? "text-zinc-600" : trip.netProfitKrw >= 0 ? "text-emerald-400" : "text-red-400"}`}>
                     {!trip ? "-" : (
                       <>
-                        <span className="font-semibold">{trip.netProfitKrw >= 0 ? "+" : ""}{trip.netProfitKrw.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 5 })} KRW</span>
+                        <span className="font-semibold">
+                          {displayCurrency === "USD"
+                            ? `${trip.netProfitKrw >= 0 ? "+" : ""}$${(Math.abs(trip.netProfitKrw) / (fxRate || 1350)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                            : `${trip.netProfitKrw >= 0 ? "+" : ""}${trip.netProfitKrw.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} KRW`}
+                        </span>
                         <span className="ml-1 text-[10px] opacity-80">({trip.netProfitPct >= 0 ? "+" : ""}{trip.netProfitPct.toFixed(2)}%)</span>
+                        <p className="text-[10px] font-normal text-zinc-500">
+                          {displayCurrency === "USD"
+                            ? `${Math.round(trip.netProfitKrw).toLocaleString()} KRW`
+                            : `$${(trip.netProfitKrw / (fxRate || 1350)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                        </p>
                         <p className="text-[10px] font-normal text-zinc-500" title={`Break-even premium ${trip.breakevenPremiumPct.toFixed(2)}% — premium must rise ${Math.max(trip.premiumGapToBreakevenPct, 0).toFixed(2)}%p more`}>
                           BE gap {trip.premiumGapToBreakevenPct >= 0 ? "+" : ""}{trip.premiumGapToBreakevenPct.toFixed(2)}%p
                         </p>

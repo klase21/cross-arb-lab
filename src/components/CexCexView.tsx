@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { usePollingInterval } from "@/lib/use-polling";
 import { useLang } from "@/lib/i18n";
+import { useDisplayCurrency } from "@/lib/use-currency";
 
 interface CexArbitrageOpportunity {
   coin: string;
@@ -18,15 +19,18 @@ interface CexArbitrageOpportunity {
 
 export default function CexCexView() {
   const { t, lang } = useLang();
+  const displayCurrency = useDisplayCurrency();
   const [opportunities, setOpportunities] = useState<CexArbitrageOpportunity[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+  const [fxRate, setFxRate] = useState(1350);
 
   const load = useCallback(async () => {
     try {
       setLoading(true);
       const response = await fetch("/api/cex-prices");
       const data = await response.json();
+      if (typeof data.fxRate === "number" && data.fxRate > 500) setFxRate(data.fxRate);
       const { findCexOpportunities } = await import("@/lib/cex-arbitrage");
       const next = findCexOpportunities(data.prices ?? {});
       setOpportunities(next);
@@ -36,7 +40,7 @@ export default function CexCexView() {
     } catch {} finally {
       setLoading(false);
     }
-  }, []);
+  }, [lang]);
 
   const intervalSec = usePollingInterval();
 
@@ -64,8 +68,19 @@ export default function CexCexView() {
                   <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${opp.netSpreadPct > 0.5 ? "bg-emerald-500/20 text-emerald-300" : "bg-emerald-900/60 text-emerald-400"}`}>Net +{opp.netSpreadPct.toFixed(3)}%</span>
                 </div>
                 <div className="text-right">
-                  <p className="text-lg font-bold text-emerald-400">+{opp.estimatedProfitUsd.toFixed(2)} USD</p>
-                  <p className="text-xs text-zinc-500">est. profit / $1,000 trade</p>
+                  <p className="text-lg font-bold text-emerald-400">
+                    {displayCurrency === "USD"
+                      ? `+${opp.estimatedProfitUsd.toFixed(2)} USD`
+                      : `+${Math.round(opp.estimatedProfitUsd * fxRate).toLocaleString()} KRW`}
+                  </p>
+                  <p className="text-xs text-zinc-500">
+                    {displayCurrency === "USD" ? "est. profit / $1,000 trade" : "예상 수익 / 100만원 거래"}
+                  </p>
+                  <p className="text-[10px] text-zinc-600">
+                    {displayCurrency === "USD"
+                      ? `${Math.round(opp.estimatedProfitUsd * fxRate).toLocaleString()} KRW`
+                      : `$${opp.estimatedProfitUsd.toFixed(2)} USD`}
+                  </p>
                 </div>
               </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
@@ -95,13 +110,13 @@ export default function CexCexView() {
 
       {opportunities.length === 0 && !loading && (
         <div className="rounded-xl border border-zinc-800 p-12 text-center">
-          <p className="text-lg text-zinc-400 mb-2">No profitable CEX-to-CEX opportunities right now</p>
-          <p className="text-sm text-zinc-600">Cross-exchange spreads are within fees. Refreshing every 30 seconds.</p>
+          <p className="text-lg text-zinc-400 mb-2">{t("cex.noOpp.title")}</p>
+          <p className="text-sm text-zinc-600">{t("cex.noOpp.desc")}</p>
         </div>
       )}
 
       {loading && opportunities.length === 0 && (
-        <div className="rounded-xl border border-zinc-800 p-12 text-center animate-pulse"><p className="text-lg text-zinc-500">Loading CEX prices…</p></div>
+        <div className="rounded-xl border border-zinc-800 p-12 text-center animate-pulse"><p className="text-lg text-zinc-500">{t("cex.loading")}</p></div>
       )}
     </>
   );
