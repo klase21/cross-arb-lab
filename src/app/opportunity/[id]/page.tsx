@@ -2,10 +2,11 @@
 
 import { useState, useEffect, use } from "react";
 import ExecutionPanel from "./ExecutionPanel";
-import type { ChainId } from "@/lib/dex-config";
+import { CHAIN_DEXES, type ChainId } from "@/lib/dex-config";
 import { scoreDexArb, riskColor, riskBarColor } from "@/lib/risk-scorer";
 import { LangProvider, useLang } from "@/lib/i18n";
 import { useDisplayCurrency } from "@/lib/use-currency";
+import { dexscreenerEmbedUrl, dexscreenerTokenUrl } from "@/lib/dexscreener";
 
 interface FlowStep { order: number; action: string; detail: string; platform: string; chain?: string; icon: string; }
 interface CostBreakdown { upbitFeeKrw: number; withdrawalFeeKrw: number; gasCostKrw: number; onchainFeeKrw: number; totalCostsKrw: number; tokensReceived: number; netProfitKrw: number; roiPct: number; breakEvenSpreadPct: number; }
@@ -179,6 +180,27 @@ function OpportunityDetailInner({ params }: { params: Promise<{ id: string }> })
               <p className="text-sm text-zinc-500">{lang === "ko" ? "비용 정보를 불러오는 중입니다…" : "Loading cost breakdown…"}</p>
             )}
           </div>
+
+          {/* Dexscreener Chart — token embed */}
+          {(() => {
+            const baseSym = opp.pair.split("/")[0];
+            const token = CHAIN_DEXES.find(c => c.chain === opp.buyChain)?.tokens[baseSym];
+            if (!token) return null;
+            const embedUrl = dexscreenerEmbedUrl(opp.buyChain, token.address);
+            const tokenUrl = dexscreenerTokenUrl(opp.buyChain, token.address);
+            return (
+              <div className="rounded-xl border border-zinc-800 p-6 mb-6">
+                <div className="flex items-center justify-between mb-3">
+                  <h2 className="text-base font-semibold">{lang === "ko" ? "덱스 차트" : "DEX Chart"} <span className="text-xs font-normal text-zinc-500 ml-2">{baseSym} / {CHAIN_NAMES[opp.buyChain] ?? opp.buyChain}</span></h2>
+                  <a href={tokenUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-emerald-400 hover:underline">Dexscreener →</a>
+                </div>
+                <div className="rounded-lg overflow-hidden border border-zinc-800 bg-zinc-900" style={{ height: 400 }}>
+                  <iframe src={embedUrl} style={{ width: "100%", height: "100%", border: 0 }} title={`Dexscreener ${baseSym}`} loading="lazy" />
+                </div>
+                <p className="text-[11px] text-zinc-600 mt-2">{lang === "ko" ? "Dexscreener 임베드 차트 — 토큰 시세·유동성·거래량 확인" : "Dexscreener embed — check price, liquidity & volume"}</p>
+              </div>
+            );
+          })()}
 
           <div className="rounded-xl border border-zinc-800 p-6 mb-6">
             <h2 className="text-base font-semibold mb-1">{lang === "ko" ? "단계별 실행 계획" : "Step-by-Step Execution Plan"} <span className="text-xs font-normal text-zinc-500 ml-2">{lang === "ko" ? "(단순 스왑 기반 차익 — LP 토큰 없음)" : "(Simple swap-based arbitrage - no LP tokens involved)"}</span></h2>
