@@ -7,10 +7,12 @@ import DexCompareView from "@/components/DexCompareView";
 import SettingsView from "@/components/SettingsView";
 import CalculatorView from "@/components/CalculatorView";
 import SimulatorView from "@/components/SimulatorView";
+import CexCexView from "@/components/CexCexView";
 
 const TABS = [
   { id: "kimchi", label: "Kimchi", title: "Kimchi Premium Tracker", desc: "All Upbit KRW pairs vs global price, with per-pair round-trip P&L" },
   { id: "arbitrage", label: "DEX Arbitrage", title: "Upbit → DEX Arbitrage", desc: "Buy on Upbit, withdraw, sell on-chain — live web-quote prices" },
+  { id: "cex", label: "CEX Arbitrage", title: "CEX → CEX (보유자산)", desc: "No on-chain move — hold inventory on both CEXes, instant hedge (Upbit·Bithumb·Binance·Bybit·OKX)" },
   { id: "compare", label: "DEX Compare", title: "DEX Price Compare", desc: "Live Uniswap & Sushi web-quote APIs compared across chains" },
   { id: "calculator", label: "Calculator", title: "Profit Calculator", desc: "Investment, fees and break-even simulation for a chosen coin and chain" },
   { id: "simulator", label: "Simulator", title: "Timing Simulator", desc: "Step-by-step execution timing and bottleneck analysis for any route" },
@@ -57,6 +59,7 @@ export default function Home() {
 
         {tab === "kimchi" && <KimchiView />}
         {tab === "arbitrage" && <DexArbitrageView />}
+        {tab === "cex" && <CexCexView />}
         {tab === "compare" && <DexCompareView />}
         {tab === "calculator" && <CalculatorView />}
         {tab === "simulator" && <SimulatorView />}

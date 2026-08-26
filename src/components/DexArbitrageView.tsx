@@ -104,6 +104,7 @@ export default function DexArbitrageView() {
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [walletMap, setWalletMap] = useState<Map<string, { wallet_state: string; block_state: string; message: string }>>(new Map());
+  const [inventoryMode, setInventoryMode] = useState(false);
   const intervalSec = usePollingInterval();
 
   const load = useCallback(async () => {
@@ -149,10 +150,23 @@ export default function DexArbitrageView() {
 
   return (
     <>
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
         <p className="text-xs text-zinc-500">Buy on Upbit (KRW) &rarr; withdraw &rarr; sell on-chain via Uniswap / Sushi web quotes.</p>
-        {lastUpdated && <p className="text-xs text-zinc-600">Last updated: {lastUpdated}</p>}
+        <div className="flex items-center gap-3">
+          <label className="flex items-center gap-2 text-xs text-zinc-400 cursor-pointer select-none" title="보유자산 가정: 출금·브릿지·대기시간 제외, 양쪽에 미리 보유한 경우의 순수 스프레드">
+            <button onClick={() => setInventoryMode(v => !v)} className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${inventoryMode ? "bg-emerald-600" : "bg-zinc-700"}`}>
+              <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${inventoryMode ? "translate-x-[18px]" : "translate-x-1"}`} />
+            </button>
+            보유자산 가정
+          </label>
+          {lastUpdated && <p className="text-xs text-zinc-600">Last updated: {lastUpdated}</p>}
+        </div>
       </div>
+      {inventoryMode && (
+        <div className="rounded-lg border border-emerald-900/50 bg-emerald-950/20 px-4 py-3 mb-4 text-xs text-emerald-200">
+          <span className="font-medium">보유자산 모드 ON</span> — 출금 수수료·가스·브릿지·대기시간을 제외한 순수 스프레드만 표시. 양쪽 체인/거래소에 미리 보유한 경우 즉시 양방향 체결 가정 (CEX Arbitrage 탭은 이 로직 전용).
+        </div>
+      )}
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <StatCard label="Opportunities" value={opportunities.length} accent />
@@ -170,7 +184,7 @@ export default function DexArbitrageView() {
       {opportunities.length > 0 && (
         <div className="space-y-3">
           {opportunities.map((opp, idx) => (
-            <OpportunityCard key={`${opp.pair}-${idx}-${opp.detectedAt}`} opp={opp} fmtUsd={fmtUsd} fmtPct={fmtPct} fmtPrice={fmtPrice} fxRate={fxRate} walletMap={walletMap} />
+            <OpportunityCard key={`${opp.pair}-${idx}-${opp.detectedAt}`} opp={opp} fmtUsd={fmtUsd} fmtPct={fmtPct} fmtPrice={fmtPrice} fxRate={fxRate} walletMap={walletMap} inventoryMode={inventoryMode} />
           ))}
         </div>
       )}
@@ -288,8 +302,8 @@ function StatCard({ label, value, accent }: { label: string; value: number; acce
   );
 }
 
-function OpportunityCard({ opp, fmtUsd, fmtPct, fmtPrice, fxRate, walletMap }: {
-  opp: ArbitrageOpportunity; fmtUsd: (n: number) => string; fmtPct: (n: number) => string; fmtPrice: (n: number) => string; fxRate: number; walletMap: Map<string, { wallet_state: string; block_state: string; message: string }>;
+function OpportunityCard({ opp, fmtUsd, fmtPct, fmtPrice, fxRate, walletMap, inventoryMode }: {
+  opp: ArbitrageOpportunity; fmtUsd: (n: number) => string; fmtPct: (n: number) => string; fmtPrice: (n: number) => string; fxRate: number; walletMap: Map<string, { wallet_state: string; block_state: string; message: string }>; inventoryMode?: boolean;
 }) {
   const isDexToUpbit = opp.direction === "dexToUpbit";
 
@@ -320,6 +334,29 @@ function OpportunityCard({ opp, fmtUsd, fmtPct, fmtPrice, fxRate, walletMap }: {
     blockState: wallet?.block_state,
     walletMessage: wallet?.message,
   });
+
+  // Inventory assumption: both venues pre-funded, no withdraw/bridge, instant 2s execution
+  const inventoryNetPct = opp.netSpreadPct + (opp.isCrossChain ? opp.bridgeFeePct : 0);
+  const inventoryRisk = inventoryMode
+    ? scoreDexArb({
+        pair: opp.pair,
+        buyChain: opp.buyChain,
+        sellChain: opp.sellChain,
+        buyCoin: opp.buyCoin,
+        isCrossChain: false,
+        liquidityUsd: opp.liquidityUsd,
+        netSpreadPct: inventoryNetPct,
+        breakEvenSpreadPct: opp.costBreakdown ? opp.costBreakdown.breakEvenSpreadPct * 0.4 : undefined, // lower breakeven without withdraw/gas
+        walletState: wallet?.wallet_state,
+        blockState: wallet?.block_state,
+        walletMessage: wallet?.message,
+      })
+    : null;
+  const displayRisk = inventoryMode && inventoryRisk ? inventoryRisk : risk;
+  const inventoryProfitUsd = inventoryMode ? opp.liquidityUsd * inventoryNetPct / 100 - (opp.isCrossChain ? 2 : 1) : null;
+  const inventoryNetKrw = opp.costBreakdown && inventoryMode
+    ? opp.costBreakdown.netProfitKrw + opp.costBreakdown.withdrawalFeeKrw + opp.costBreakdown.gasCostKrw + (opp.isCrossChain ? opp.costBreakdown.onchainFeeKrw * 0.08 : 0)
+    : null;
   return (
     <div className={`rounded-xl border p-5 cursor-pointer select-none transition-all ${opp.isCrossChain ? "border-violet-800/60 bg-gradient-to-r from-violet-950/20 to-zinc-900/80 hover:border-violet-600" : "border-emerald-900/50 bg-gradient-to-r from-emerald-950/30 to-zinc-900/80 hover:border-emerald-700"}`}>
       <div className="flex items-start justify-between mb-3 flex-wrap gap-2">
@@ -342,9 +379,13 @@ function OpportunityCard({ opp, fmtUsd, fmtPct, fmtPrice, fxRate, walletMap }: {
           {isDexToUpbit && (
             <span className="px-2 py-0.5 rounded-full bg-orange-900/60 text-orange-300 text-xs font-medium">Reverse (DEX→Upbit)</span>
           )}
-          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${opp.netSpreadPct > 1 ? "bg-emerald-500/20 text-emerald-300" : "bg-emerald-900/60 text-emerald-400"}`}>Net +{fmtPct(opp.netSpreadPct)}</span>
-          <span className={`px-2 py-0.5 rounded-full text-xs font-mono border ${riskColor(risk.grade)}`} title={`Risk ${risk.grade} ${risk.label} (${risk.total}) — 유동성 ${risk.axes.liquidity} · 실행 ${risk.axes.execution} · 거래소 ${risk.axes.exchange} · 토큰 ${risk.axes.token} · 변동성 ${risk.axes.volatility}`}>
-            Risk {risk.grade} {risk.total}
+          {inventoryMode ? (
+            <span className="px-2 py-0.5 rounded-full bg-emerald-600 text-white text-xs font-medium" title={`보유 가정: 브릿지 제외 순수 스프레드 ${inventoryNetPct.toFixed(3)}%`}>보유 Net +{fmtPct(inventoryNetPct)} </span>
+          ) : (
+            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${opp.netSpreadPct > 1 ? "bg-emerald-500/20 text-emerald-300" : "bg-emerald-900/60 text-emerald-400"}`}>Net +{fmtPct(opp.netSpreadPct)}</span>
+          )}
+          <span className={`px-2 py-0.5 rounded-full text-xs font-mono border ${riskColor(displayRisk.grade)}`} title={`Risk ${displayRisk.grade} ${displayRisk.label} (${displayRisk.total}) — 유동성 ${displayRisk.axes.liquidity} · 실행 ${displayRisk.axes.execution} · 거래소 ${displayRisk.axes.exchange} · 토큰 ${displayRisk.axes.token} · 변동성 ${displayRisk.axes.volatility} ${inventoryMode ? "— 보유가정: 브릿지/대기 제외" : ""}`}>
+            Risk {displayRisk.grade} {displayRisk.total}{inventoryMode ? " (보유)" : ""}
           </span>
           <span className={`px-2 py-0.5 rounded-full text-xs font-mono ${invalidRoute ? "bg-red-900/60 text-red-300" : stillLikelyProfitable ? "bg-cyan-900/60 text-cyan-300" : "bg-red-900/60 text-red-300"}`} title="Estimated time: market buy to sell completion">
             {"⏱"} {invalidRoute ? "invalid route" : <>{fmtDur(totalExecSec)} {stillLikelyProfitable ? "✅ profitable window" : "⚠️ premium risk"}</>}
@@ -352,12 +393,28 @@ function OpportunityCard({ opp, fmtUsd, fmtPct, fmtPrice, fxRate, walletMap }: {
         </div>
         <div className="text-right">
           {opp.costBreakdown ? (
+            inventoryMode && inventoryNetKrw !== null ? (
+              <>
+                <p className={inventoryNetKrw >= 0 ? "text-lg font-bold text-emerald-400" : "text-lg font-bold text-red-400"}>
+                  {(inventoryNetKrw >= 0 ? "+" : "")}${(Math.abs(inventoryNetKrw / fxRate)).toFixed(2)}
+                </p>
+                <p className="text-xs text-emerald-500">보유 가정 · 출금/브릿지 제외</p>
+                <p className="text-[10px] text-zinc-600 line-through">출금 포함: {(opp.costBreakdown.netProfitKrw >= 0 ? "+" : "")}${(Math.abs(opp.costBreakdown.netProfitKrw / fxRate)).toFixed(2)}</p>
+              </>
+            ) : (
+              <>
+                <p className={opp.costBreakdown.netProfitKrw >= 0 ? "text-lg font-bold text-emerald-400" : "text-lg font-bold text-red-400"}>
+                  {(opp.costBreakdown.netProfitKrw >= 0 ? "+" : "")}${(Math.abs(opp.costBreakdown.netProfitKrw / fxRate)).toFixed(2)}
+                </p>
+                <p className={opp.costBreakdown.roiPct >= 0 ? "text-xs text-emerald-500" : "text-xs text-red-500"}>ROI: {opp.costBreakdown.roiPct.toFixed(3)}% &middot; Net profit</p>
+                <p className="text-[10px] text-zinc-600 mt-0.5">after all fees</p>
+              </>
+            )
+          ) : inventoryMode && inventoryProfitUsd !== null ? (
             <>
-              <p className={opp.costBreakdown.netProfitKrw >= 0 ? "text-lg font-bold text-emerald-400" : "text-lg font-bold text-red-400"}>
-                {(opp.costBreakdown.netProfitKrw >= 0 ? "+" : "")}${(Math.abs(opp.costBreakdown.netProfitKrw / fxRate)).toFixed(2)}
-              </p>
-              <p className={opp.costBreakdown.roiPct >= 0 ? "text-xs text-emerald-500" : "text-xs text-red-500"}>ROI: {opp.costBreakdown.roiPct.toFixed(3)}% &middot; Net profit</p>
-              <p className="text-[10px] text-zinc-600 mt-0.5">after all fees</p>
+              <p className="text-lg font-bold text-emerald-400">{fmtUsd(inventoryProfitUsd)}</p>
+              <p className="text-xs text-emerald-500">보유 가정 · 브릿지 제외</p>
+              <p className="text-[10px] text-zinc-600 line-through">출금 포함: {fmtUsd(opp.estimatedProfitUsd)}</p>
             </>
           ) : (
             <>
@@ -378,26 +435,28 @@ function OpportunityCard({ opp, fmtUsd, fmtPct, fmtPrice, fxRate, walletMap }: {
 
       <div className="mt-3 pt-3 border-t border-zinc-800/60">
         <div className="flex items-center justify-between mb-2">
-          <p className="text-xs font-medium text-zinc-400">Risk Breakdown <span className={`ml-2 px-2 py-0.5 rounded-full text-xs border ${riskColor(risk.grade)}`}>{risk.grade} {risk.label} · {risk.total}/100</span></p>
-          <span className="text-[10px] text-zinc-600">가중합 30/25/20/15/10</span>
+          <p className="text-xs font-medium text-zinc-400">Risk Breakdown <span className={`ml-2 px-2 py-0.5 rounded-full text-xs border ${riskColor(displayRisk.grade)}`}>{displayRisk.grade} {displayRisk.label} · {displayRisk.total}/100{inventoryMode ? " (보유)" : ""}</span></p>
+          <span className="text-[10px] text-zinc-600">가중합 30/25/20/15/10 {inventoryMode ? "· 보유가정" : ""}</span>
         </div>
         <div className="space-y-1.5">
           {([
-            ["유동성", risk.axes.liquidity],
-            ["실행", risk.axes.execution],
-            ["거래소", risk.axes.exchange],
-            ["토큰", risk.axes.token],
-            ["변동성", risk.axes.volatility],
-          ] as const).map(([label, val]) => (
+            ["유동성", displayRisk.axes.liquidity, risk.axes.liquidity],
+            ["실행", displayRisk.axes.execution, risk.axes.execution],
+            ["거래소", displayRisk.axes.exchange, risk.axes.exchange],
+            ["토큰", displayRisk.axes.token, risk.axes.token],
+            ["변동성", displayRisk.axes.volatility, risk.axes.volatility],
+          ] as const).map(([label, val, orig]) => (
             <div key={label} className="flex items-center gap-2">
               <span className="text-[11px] text-zinc-500 w-10">{label}</span>
               <div className="flex-1 h-1.5 rounded-full bg-zinc-800 overflow-hidden">
-                <div className={`h-full rounded-full ${riskBarColor(risk.grade)}`} style={{ width: `${val}%`, opacity: 0.3 + (val / 100) * 0.7 }} />
+                <div className={`h-full rounded-full ${riskBarColor(displayRisk.grade)}`} style={{ width: `${val}%`, opacity: 0.3 + (val / 100) * 0.7 }} />
               </div>
               <span className="text-[11px] font-mono text-zinc-400 w-6 text-right">{val}</span>
+              {inventoryMode && orig !== val && <span className="text-[10px] font-mono text-zinc-600 line-through">{orig}</span>}
             </div>
           ))}
         </div>
+        {inventoryMode && <p className="text-[10px] text-zinc-600 mt-2">보유가정: 브릿지 0%, 실행 2초, 가스 1회만 반영. 원래 점수는 취소선으로 표시.</p>}
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-sm mt-3">
