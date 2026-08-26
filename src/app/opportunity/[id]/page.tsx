@@ -3,6 +3,7 @@
 import { useState, useEffect, use } from "react";
 import ExecutionPanel from "./ExecutionPanel";
 import type { ChainId } from "@/lib/dex-config";
+import { scoreDexArb, riskColor, riskBarColor } from "@/lib/risk-scorer";
 
 interface FlowStep { order: number; action: string; detail: string; platform: string; chain?: string; icon: string; }
 interface CostBreakdown { upbitFeeKrw: number; withdrawalFeeKrw: number; gasCostKrw: number; onchainFeeKrw: number; totalCostsKrw: number; tokensReceived: number; netProfitKrw: number; roiPct: number; breakEvenSpreadPct: number; }
@@ -59,6 +60,42 @@ export default function OpportunityDetail({ params }: { params: Promise<{ id: st
             <SummaryCard label="Buy Price" value={"@ " + fmtPrice(opp.buyPrice)} />
             <SummaryCard label="Sell Price" value={"@ " + fmtPrice(opp.sellPrice)} />
           </div>
+
+          {(() => {
+            const risk = scoreDexArb({
+              pair: opp.pair,
+              buyChain: opp.buyChain,
+              sellChain: opp.sellChain,
+              buyCoin: opp.buyCoin,
+              isCrossChain: opp.isCrossChain,
+              liquidityUsd: opp.liquidityUsd,
+              netSpreadPct: opp.netSpreadPct,
+              breakEvenSpreadPct: opp.costBreakdown?.breakEvenSpreadPct,
+            });
+            return (
+              <div className="rounded-xl border border-zinc-800 p-6 mb-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-base font-semibold">Risk Assessment <span className={`ml-2 px-3 py-1 rounded-full text-xs border ${riskColor(risk.grade)}`}>{risk.grade} {risk.label} · {risk.total}/100</span></h2>
+                  <span className="text-[11px] text-zinc-600">30/25/20/15/10 가중합</span>
+                </div>
+                <div className="space-y-3">
+                  {([
+                    ["유동성 (30%)", risk.axes.liquidity, "거래대금·호가 깊이"],
+                    ["실행 (25%)", risk.axes.execution, "가스·브릿지·소요시간"],
+                    ["거래소 (20%)", risk.axes.exchange, "입출금 상태"],
+                    ["토큰 (15%)", risk.axes.token, "검증·심볼충돌"],
+                    ["변동성 (10%)", risk.axes.volatility, "스프레드 버퍼"],
+                  ] as const).map(([label, val, desc]) => (
+                    <div key={label}>
+                      <div className="flex justify-between text-xs mb-1"><span className="text-zinc-400">{label} <span className="text-zinc-600">— {desc}</span></span><span className="text-zinc-500 font-mono">{val}</span></div>
+                      <div className="h-2 rounded-full bg-zinc-800 overflow-hidden"><div className={`h-full rounded-full ${riskBarColor(risk.grade)}`} style={{ width: `${val}%`, opacity: 0.35 + (val / 100) * 0.65 }} /></div>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-[11px] text-zinc-600 mt-3">A 0-20 초저위험 · B 21-40 저위험 · C 41-60 중위험 · D 61-80 고위험 · F 81-100 초고위험. 총점 = 5축 가중합.</p>
+              </div>
+            );
+          })()}
 
           <div className="rounded-xl border border-zinc-800 p-6 mb-6">
             <h2 className="text-base font-semibold mb-1">Step-by-Step Execution Plan <span className="text-xs font-normal text-zinc-500 ml-2">(Simple swap-based arbitrage - no LP tokens involved)</span></h2>

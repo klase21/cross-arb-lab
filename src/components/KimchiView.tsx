@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePollingInterval } from "@/lib/use-polling";
+import { scoreKimchi, riskColor } from "@/lib/risk-scorer";
 
 interface KimchiItem {
   coin: string;
@@ -39,7 +40,7 @@ function formatKrw(value: number) {
   return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 5 });
 }
 
-type SortKey = "premium" | "roundTrip" | "cmcDev" | "coin";
+type SortKey = "premium" | "roundTrip" | "cmcDev" | "coin" | "risk";
 type SortDir = "desc" | "asc";
 
 function Sparkline({ data }: { data: number[] }) {
@@ -177,19 +178,48 @@ export default function KimchiView() {
     return () => clearInterval(interval);
   }, [load, intervalSec]);
 
+  const getKimchiRisk = (item: KimchiItem) => {
+    const wallet = walletMap.get(item.coin);
+    const delta1h = topMovers.find(m => m.coin === item.coin)?.delta;
+    // history-based fallback if not in topMovers: compute from last 2 points
+    let histDelta: number | undefined = delta1h;
+    if (histDelta === undefined) {
+      const hist = history[item.coin];
+      if (hist && hist.length >= 2) histDelta = hist[hist.length - 1].premium - hist[0].premium;
+    }
+    const spreadBufferPct = item.trip ? -item.trip.premiumGapToBreakevenPct : undefined;
+    return scoreKimchi({
+      coin: item.coin,
+      volumeKrw: item.volumeKrw,
+      binanceDevPct: item.binanceDevPct,
+      verified: item.verified,
+      binanceOnCmc: item.binanceOnCmc,
+      walletState: wallet?.wallet_state,
+      blockState: wallet?.block_state,
+      walletMessage: wallet?.message,
+      delta1h: histDelta,
+      spreadBufferPct,
+    });
+  };
+
   const exportCsv = () => {
-    const headers = ["Coin", "Name", "Upbit_KRW_Bid", "Global_USD_Ask", "Premium_Pct", "CMC_Dev_Pct", "Volume_KRW_24h", "RoundTrip_KRW", "RoundTrip_Pct"];
-    const rows = filtered.map(item => [
-      item.coin,
-      item.nameKr,
-      item.upbitKrw.toFixed(2),
-      item.globalUsd.toFixed(5),
-      item.premiumPct.toFixed(2),
-      item.binanceDevPct?.toFixed(1) ?? "",
-      item.volumeKrw ? Math.round(item.volumeKrw).toString() : "",
-      item.trip ? Math.round(item.trip.netProfitKrw).toString() : "",
-      item.trip ? item.trip.netProfitPct.toFixed(2) : "",
-    ]);
+    const headers = ["Coin", "Name", "Upbit_KRW_Bid", "Global_USD_Ask", "Premium_Pct", "CMC_Dev_Pct", "Volume_KRW_24h", "RoundTrip_KRW", "RoundTrip_Pct", "Risk_Total", "Risk_Grade"];
+    const rows = filtered.map(item => {
+      const r = getKimchiRisk(item);
+      return [
+        item.coin,
+        item.nameKr,
+        item.upbitKrw.toFixed(2),
+        item.globalUsd.toFixed(5),
+        item.premiumPct.toFixed(2),
+        item.binanceDevPct?.toFixed(1) ?? "",
+        item.volumeKrw ? Math.round(item.volumeKrw).toString() : "",
+        item.trip ? Math.round(item.trip.netProfitKrw).toString() : "",
+        item.trip ? item.trip.netProfitPct.toFixed(2) : "",
+        r.total.toString(),
+        r.grade,
+      ];
+    });
     const csv = [headers, ...rows].map(row => row.map(cell => `"${cell}"`).join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
@@ -206,6 +236,7 @@ export default function KimchiView() {
         case "premium": return item.premiumPct;
         case "roundTrip": return item.trip?.netProfitPct ?? -Infinity;
         case "cmcDev": return item.binanceDevPct ?? Infinity;
+        case "risk": return getKimchiRisk(item).total;
         case "coin": return 0;
       }
     };
@@ -227,7 +258,7 @@ export default function KimchiView() {
         if (Number.isNaN(diff)) return 0;
         return sortDir === "desc" ? diff : -diff;
       });
-  }, [items, search, verifiedOnly, favorites, sortKey, sortDir]);
+  }, [items, search, verifiedOnly, favorites, sortKey, sortDir, walletMap, history, topMovers]);
 
   return (
     <>
@@ -284,7 +315,7 @@ export default function KimchiView() {
       </div>
 
       <div className="rounded-xl border border-zinc-800 overflow-x-auto">
-        <table className="w-full text-sm min-w-[1080px]">
+        <table className="w-full text-sm min-w-[1180px]">
           <thead>
             <tr className="bg-zinc-900/80 text-zinc-500 text-xs">
               <th className="text-left font-medium px-4 py-2.5">Coin</th>
@@ -307,6 +338,13 @@ export default function KimchiView() {
                 onClick={() => toggleSort("premium")}
               >
                 Kimchi Premium {sortKey === "premium" && <span className="text-emerald-400">{sortDir === "desc" ? "▼" : "▲"}</span>}
+              </th>
+              <th
+                className="text-center font-medium px-3 py-2.5 cursor-pointer hover:text-zinc-300 select-none"
+                title="5대 축 가중합 (유동성30/실행25/거래소20/토큰15/변동성10) — 클릭하여 위험도 정렬"
+                onClick={() => toggleSort("risk")}
+              >
+                Risk {sortKey === "risk" && <span className="text-emerald-400">{sortDir === "desc" ? "▼" : "▲"}</span>}
               </th>
               <th className="text-center font-medium px-2 py-2.5" title="업비트 입출금 현황 - 클릭하면 공식 페이지로 이동">지갑</th>
               <th
@@ -374,6 +412,19 @@ export default function KimchiView() {
                   <td className={`text-right px-4 py-2.5 font-mono font-semibold ${positive ? (strong ? "text-red-400" : "text-red-300") : "text-sky-300"}`}>
                     {positive ? "+" : ""}{item.premiumPct.toFixed(2)}%
                   </td>
+                  <td className="text-center px-3 py-2.5">
+                    {(() => {
+                      const r = getKimchiRisk(item);
+                      return (
+                        <span
+                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium border ${riskColor(r.grade)}`}
+                          title={`Risk ${r.grade} ${r.label} (${r.total}) — 유동성 ${r.axes.liquidity} · 실행 ${r.axes.execution} · 거래소 ${r.axes.exchange} · 토큰 ${r.axes.token} · 변동성 ${r.axes.volatility}`}
+                        >
+                          {r.grade} {r.total}
+                        </span>
+                      );
+                    })()}
+                  </td>
                   <td className="text-center px-2 py-2.5">
                     {(() => {
                       const wallet = walletMap.get(item.coin);
@@ -412,10 +463,10 @@ export default function KimchiView() {
               );
             })}
             {filtered.length === 0 && !loading && (
-              <tr><td colSpan={11} className="text-center text-zinc-500 py-8">No pairs match the search.</td></tr>
+              <tr><td colSpan={12} className="text-center text-zinc-500 py-8">No pairs match the search.</td></tr>
             )}
             {loading && items.length === 0 && (
-              <tr><td colSpan={11} className="text-center text-zinc-500 py-8 animate-pulse">Loading all KRW pairs…</td></tr>
+              <tr><td colSpan={12} className="text-center text-zinc-500 py-8 animate-pulse">Loading all KRW pairs…</td></tr>
             )}
           </tbody>
         </table>

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { simulateTiming } from "@/lib/timing-simulator";
 import { usePollingInterval } from "@/lib/use-polling";
+import { scoreDexArb, riskColor, riskBarColor } from "@/lib/risk-scorer";
 
 interface ArbitrageOpportunity {
   pair: string;
@@ -290,7 +291,6 @@ function StatCard({ label, value, accent }: { label: string; value: number; acce
 function OpportunityCard({ opp, fmtUsd, fmtPct, fmtPrice, fxRate, walletMap }: {
   opp: ArbitrageOpportunity; fmtUsd: (n: number) => string; fmtPct: (n: number) => string; fmtPrice: (n: number) => string; fxRate: number; walletMap: Map<string, { wallet_state: string; block_state: string; message: string }>;
 }) {
-  const detailUrl = `/opportunity/${encodeURIComponent(`${opp.pair}|${opp.buyChain}|${opp.sellChain}`)}`;
   const isDexToUpbit = opp.direction === "dexToUpbit";
 
   // Compute expected execution time for this opportunity (also validates the coin-chain combo)
@@ -305,6 +305,21 @@ function OpportunityCard({ opp, fmtUsd, fmtPct, fmtPrice, fxRate, walletMap }: {
   const totalExecSec = Math.max(timing.totalSec, 0);
   const stillLikelyProfitable = !invalidRoute && totalExecSec < 600; // under 10 min = still profitable window
   const fmtDur = (s: number) => s >= 60 ? Math.floor(s / 60) + "m " + (s % 60) + "s" : s + "s";
+
+  const wallet = walletMap.get(opp.buyCoin);
+  const risk = scoreDexArb({
+    pair: opp.pair,
+    buyChain: opp.buyChain,
+    sellChain: opp.sellChain,
+    buyCoin: opp.buyCoin,
+    isCrossChain: opp.isCrossChain,
+    liquidityUsd: opp.liquidityUsd,
+    netSpreadPct: opp.netSpreadPct,
+    breakEvenSpreadPct: opp.costBreakdown?.breakEvenSpreadPct,
+    walletState: wallet?.wallet_state,
+    blockState: wallet?.block_state,
+    walletMessage: wallet?.message,
+  });
   return (
     <div className={`rounded-xl border p-5 cursor-pointer select-none transition-all ${opp.isCrossChain ? "border-violet-800/60 bg-gradient-to-r from-violet-950/20 to-zinc-900/80 hover:border-violet-600" : "border-emerald-900/50 bg-gradient-to-r from-emerald-950/30 to-zinc-900/80 hover:border-emerald-700"}`}>
       <div className="flex items-start justify-between mb-3 flex-wrap gap-2">
@@ -328,6 +343,9 @@ function OpportunityCard({ opp, fmtUsd, fmtPct, fmtPrice, fxRate, walletMap }: {
             <span className="px-2 py-0.5 rounded-full bg-orange-900/60 text-orange-300 text-xs font-medium">Reverse (DEX→Upbit)</span>
           )}
           <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${opp.netSpreadPct > 1 ? "bg-emerald-500/20 text-emerald-300" : "bg-emerald-900/60 text-emerald-400"}`}>Net +{fmtPct(opp.netSpreadPct)}</span>
+          <span className={`px-2 py-0.5 rounded-full text-xs font-mono border ${riskColor(risk.grade)}`} title={`Risk ${risk.grade} ${risk.label} (${risk.total}) — 유동성 ${risk.axes.liquidity} · 실행 ${risk.axes.execution} · 거래소 ${risk.axes.exchange} · 토큰 ${risk.axes.token} · 변동성 ${risk.axes.volatility}`}>
+            Risk {risk.grade} {risk.total}
+          </span>
           <span className={`px-2 py-0.5 rounded-full text-xs font-mono ${invalidRoute ? "bg-red-900/60 text-red-300" : stillLikelyProfitable ? "bg-cyan-900/60 text-cyan-300" : "bg-red-900/60 text-red-300"}`} title="Estimated time: market buy to sell completion">
             {"⏱"} {invalidRoute ? "invalid route" : <>{fmtDur(totalExecSec)} {stillLikelyProfitable ? "✅ profitable window" : "⚠️ premium risk"}</>}
           </span>
@@ -358,7 +376,31 @@ function OpportunityCard({ opp, fmtUsd, fmtPct, fmtPrice, fxRate, walletMap }: {
         </div>
       )}
 
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-sm">
+      <div className="mt-3 pt-3 border-t border-zinc-800/60">
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-xs font-medium text-zinc-400">Risk Breakdown <span className={`ml-2 px-2 py-0.5 rounded-full text-xs border ${riskColor(risk.grade)}`}>{risk.grade} {risk.label} · {risk.total}/100</span></p>
+          <span className="text-[10px] text-zinc-600">가중합 30/25/20/15/10</span>
+        </div>
+        <div className="space-y-1.5">
+          {([
+            ["유동성", risk.axes.liquidity],
+            ["실행", risk.axes.execution],
+            ["거래소", risk.axes.exchange],
+            ["토큰", risk.axes.token],
+            ["변동성", risk.axes.volatility],
+          ] as const).map(([label, val]) => (
+            <div key={label} className="flex items-center gap-2">
+              <span className="text-[11px] text-zinc-500 w-10">{label}</span>
+              <div className="flex-1 h-1.5 rounded-full bg-zinc-800 overflow-hidden">
+                <div className={`h-full rounded-full ${riskBarColor(risk.grade)}`} style={{ width: `${val}%`, opacity: 0.3 + (val / 100) * 0.7 }} />
+              </div>
+              <span className="text-[11px] font-mono text-zinc-400 w-6 text-right">{val}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-sm mt-3">
         <div>
           <p className="text-xs text-zinc-500 mb-0.5 flex items-center gap-1">Buy on {(() => {
             const wallet = walletMap.get(opp.buyCoin);
