@@ -19,6 +19,10 @@ const TABS = [
   { id: "settings", label: "설정", title: "설정", desc: "갱신주기·알림·위험 가중치" },
 ] as const;
 
+// UI에서 숨길 탭 (직접 URL ?tab=calculator 등으로는 접근 가능)
+const HIDDEN_TABS = new Set<TabId>(["calculator", "simulator"]);
+const VISIBLE_TABS = TABS.filter(t => !HIDDEN_TABS.has(t.id));
+
 type TabId = (typeof TABS)[number]["id"];
 
 export default function Home() {
@@ -45,7 +49,7 @@ export default function Home() {
             <p className="text-xs text-zinc-500 mt-0.5">{current.desc}</p>
           </div>
           <nav className="flex-shrink-0 flex rounded-lg border border-zinc-700 overflow-hidden text-sm self-start">
-            {TABS.map(item => (
+            {VISIBLE_TABS.map(item => (
               <button
                 key={item.id}
                 onClick={() => switchTab(item.id)}
