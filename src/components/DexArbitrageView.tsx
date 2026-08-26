@@ -6,6 +6,7 @@ import { usePollingInterval } from "@/lib/use-polling";
 import { scoreDexArb, riskColor, riskBarColor } from "@/lib/risk-scorer";
 import { useLang } from "@/lib/i18n";
 import { useDisplayCurrency } from "@/lib/use-currency";
+import type { RecentArbEntry } from "@/lib/recent-arbs-store";
 
 interface ArbitrageOpportunity {
   pair: string;
@@ -108,15 +109,18 @@ export default function DexArbitrageView() {
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [walletMap, setWalletMap] = useState<Map<string, { wallet_state: string; block_state: string; message: string }>>(new Map());
   const [inventoryMode, setInventoryMode] = useState(false);
+  const [recent, setRecent] = useState<RecentArbEntry[]>([]);
+  const [showRecent, setShowRecent] = useState(false);
   const intervalSec = usePollingInterval();
 
   const load = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
-      const [scanRes, walletRes] = await Promise.all([
+      const [scanRes, walletRes, recentRes] = await Promise.all([
         fetch("/api/scan"),
         fetch("/api/upbit/wallet-status").catch(() => null),
+        fetch("/api/recent-arbs?hours=24").catch(() => null),
       ]);
       if (!scanRes.ok) throw new Error(`HTTP ${scanRes.status}`);
       const next: ScanResult = await scanRes.json();
@@ -129,6 +133,10 @@ export default function DexArbitrageView() {
         const map = new Map<string, { wallet_state: string; block_state: string; message: string }>();
         for (const entry of list) if (entry.currency && !map.has(entry.currency)) map.set(entry.currency, { wallet_state: entry.wallet_state, block_state: entry.block_state, message: entry.message ?? "" });
         if (map.size > 0) setWalletMap(map);
+      }
+      if (recentRes?.ok) {
+        const recentData = await recentRes.json();
+        if (Array.isArray(recentData.entries)) setRecent(recentData.entries);
       }
       setLastUpdated(new Date().toLocaleTimeString(lang === "ko" ? "ko-KR" : "en-US"));
     } catch (cause) {
@@ -292,6 +300,45 @@ export default function DexArbitrageView() {
       {loading && !data && (
         <div className="rounded-xl border border-zinc-800 p-12 text-center animate-pulse"><p className="text-lg text-zinc-500">{t("dexArb.loading")}</p></div>
       )}
+
+      {/* Recently spotted opportunities (24h history, Phase 1) */}
+      <div className="mt-8">
+        <button
+          onClick={() => setShowRecent(v => !v)}
+          className="w-full flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-900/40 px-5 py-3 hover:border-zinc-600 transition-colors"
+        >
+          <div className="text-left">
+            <p className="text-sm font-medium text-zinc-300">{t("dexArb.recent.title")} <span className="ml-2 text-xs font-mono text-emerald-400">{recent.length}</span></p>
+            <p className="text-[11px] text-zinc-600">{t("dexArb.recent.desc")}</p>
+          </div>
+          <span className="text-zinc-500 text-xs">{showRecent ? "▲" : "▼"}</span>
+        </button>
+        {showRecent && (
+          <div className="mt-3 space-y-2">
+            {recent.length === 0 ? (
+              <div className="rounded-xl border border-zinc-800 p-6 text-center text-sm text-zinc-500">{t("dexArb.recent.none")}</div>
+            ) : (
+              recent.slice(0, 30).map(entry => {
+                const href = `/opportunity/${encodeURIComponent(`${entry.pair}|${entry.buyChain}|${entry.sellChain}`)}`;
+                const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString(lang === "ko" ? "ko-KR" : "en-US", { hour: "2-digit", minute: "2-digit" });
+                return (
+                  <a key={entry.key} href={href} className="flex items-center justify-between rounded-lg border border-zinc-800 bg-zinc-900/40 px-4 py-2.5 hover:border-emerald-700/50 transition-colors">
+                    <div className="min-w-0">
+                      <span className="text-sm font-semibold">{entry.pair}</span>
+                      <span className="ml-2 text-[11px] text-zinc-500">{CHAIN_NAMES[entry.buyChain] ?? entry.buyChain} → {CHAIN_NAMES[entry.sellChain] ?? entry.sellChain}</span>
+                      <span className="ml-2 text-[10px] font-mono text-cyan-400">×{entry.seenCount}{t("dexArb.recent.seen")}</span>
+                    </div>
+                    <div className="flex items-center gap-3 shrink-0 text-xs font-mono">
+                      <span className="text-emerald-400">+{entry.netSpreadPct.toFixed(2)}%</span>
+                      <span className="text-zinc-600" title={`${t("dexArb.recent.first")} ${fmtTime(entry.firstSeen)}`}>{t("dexArb.recent.last")} {fmtTime(entry.lastSeen)}</span>
+                    </div>
+                  </a>
+                );
+              })
+            )}
+          </div>
+        )}
+      </div>
     </>
   );
 }

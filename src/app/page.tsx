@@ -8,6 +8,7 @@ import SettingsView from "@/components/SettingsView";
 import CalculatorView from "@/components/CalculatorView";
 import SimulatorView from "@/components/SimulatorView";
 import CexCexView from "@/components/CexCexView";
+import TrendingView from "@/components/TrendingView";
 import { LangProvider, useLang } from "@/lib/i18n";
 
 const TAB_DEFS = [
@@ -15,6 +16,7 @@ const TAB_DEFS = [
   { id: "arbitrage" as const, labelKey: "tab.arbitrage.label", titleKey: "tab.arbitrage.title", descKey: "tab.arbitrage.desc" },
   { id: "cex" as const, labelKey: "tab.cex.label", titleKey: "tab.cex.title", descKey: "tab.cex.desc" },
   { id: "compare" as const, labelKey: "tab.compare.label", titleKey: "tab.compare.title", descKey: "tab.compare.desc" },
+  { id: "trending" as const, labelKey: "tab.trending.label", titleKey: "tab.trending.title", descKey: "tab.trending.desc" },
   { id: "calculator" as const, labelKey: "tab.calculator.label", titleKey: "tab.calculator.title", descKey: "tab.calculator.desc" },
   { id: "simulator" as const, labelKey: "tab.simulator.label", titleKey: "tab.simulator.title", descKey: "tab.simulator.desc" },
   { id: "settings" as const, labelKey: "tab.settings.label", titleKey: "tab.settings.title", descKey: "tab.settings.desc" },
@@ -67,6 +69,7 @@ function HomeInner() {
         {tab === "arbitrage" && <DexArbitrageView />}
         {tab === "cex" && <CexCexView />}
         {tab === "compare" && <DexCompareView />}
+        {tab === "trending" && <TrendingView />}
         {tab === "calculator" && <CalculatorView />}
         {tab === "simulator" && <SimulatorView />}
         {tab === "settings" && <SettingsView />}

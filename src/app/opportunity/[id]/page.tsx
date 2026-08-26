@@ -7,6 +7,7 @@ import { scoreDexArb, riskColor, riskBarColor } from "@/lib/risk-scorer";
 import { LangProvider, useLang } from "@/lib/i18n";
 import { useDisplayCurrency } from "@/lib/use-currency";
 import { dexscreenerEmbedUrl, dexscreenerTokenUrl } from "@/lib/dexscreener";
+import { gmgnTokenUrl } from "@/lib/gmgn";
 
 interface FlowStep { order: number; action: string; detail: string; platform: string; chain?: string; icon: string; }
 interface CostBreakdown { upbitFeeKrw: number; withdrawalFeeKrw: number; gasCostKrw: number; onchainFeeKrw: number; totalCostsKrw: number; tokensReceived: number; netProfitKrw: number; roiPct: number; breakEvenSpreadPct: number; }
@@ -188,16 +189,22 @@ function OpportunityDetailInner({ params }: { params: Promise<{ id: string }> })
             if (!token) return null;
             const embedUrl = dexscreenerEmbedUrl(opp.buyChain, token.address);
             const tokenUrl = dexscreenerTokenUrl(opp.buyChain, token.address);
+            const gmgnUrl = gmgnTokenUrl(opp.buyChain, token.address);
             return (
               <div className="rounded-xl border border-zinc-800 p-6 mb-6">
-                <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
                   <h2 className="text-base font-semibold">{lang === "ko" ? "덱스 차트" : "DEX Chart"} <span className="text-xs font-normal text-zinc-500 ml-2">{baseSym} / {CHAIN_NAMES[opp.buyChain] ?? opp.buyChain}</span></h2>
-                  <a href={tokenUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-emerald-400 hover:underline">Dexscreener →</a>
+                  <div className="flex items-center gap-3 text-xs">
+                    <a href={gmgnUrl} target="_blank" rel="noopener noreferrer" className="text-amber-400 hover:underline" title={lang === "ko" ? "GMGN에서 홀더 분포·번들·허니팟 검증" : "Verify holders, bundles & honeypot on GMGN"}>
+                      {lang === "ko" ? "GMGN 보안 검증 →" : "GMGN safety check →"}
+                    </a>
+                    <a href={tokenUrl} target="_blank" rel="noopener noreferrer" className="text-emerald-400 hover:underline">Dexscreener →</a>
+                  </div>
                 </div>
                 <div className="rounded-lg overflow-hidden border border-zinc-800 bg-zinc-900" style={{ height: 400 }}>
                   <iframe src={embedUrl} style={{ width: "100%", height: "100%", border: 0 }} title={`Dexscreener ${baseSym}`} loading="lazy" />
                 </div>
-                <p className="text-[11px] text-zinc-600 mt-2">{lang === "ko" ? "Dexscreener 임베드 차트 — 토큰 시세·유동성·거래량 확인" : "Dexscreener embed — check price, liquidity & volume"}</p>
+                <p className="text-[11px] text-zinc-600 mt-2">{lang === "ko" ? "Dexscreener 임베드 차트 — 토큰 시세·유동성·거래량 확인. 실행 전 GMGN에서 토큰 안전성(홀더·번들)을 확인하세요." : "Dexscreener embed — price, liquidity & volume. Verify token safety (holders/bundles) on GMGN before executing."}</p>
               </div>
             );
           })()}

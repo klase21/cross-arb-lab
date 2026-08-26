@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { scanAllChains } from "@/lib/price-scanner";
 import { buildScanResult, enrichWithRoundTrips, enrichWithSpotPrices } from "@/lib/arbitrage-engine";
 import { getUsdKrwRate } from "@/lib/fx";
+import { recordOpportunities } from "@/lib/recent-arbs-store";
 
 export const dynamic = "force-dynamic";
 
@@ -61,6 +62,7 @@ export async function GET() {
     const roundTripOpps = await enrichWithRoundTrips(preliminary.opportunities);
     const enrichedOpps = await enrichWithSpotPrices(roundTripOpps);
     const result = { ...preliminary, opportunities: enrichedOpps };
+    recordOpportunities(enrichedOpps);
     return NextResponse.json(result);
   } catch (error) {
     console.error("Scan failed:", error);
