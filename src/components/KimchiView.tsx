@@ -8,6 +8,7 @@ import { useLang } from "@/lib/i18n";
 interface KimchiItem {
   coin: string;
   nameKr: string;
+  nameEn: string;
   binanceSymbol?: string;
   binanceSource?: "spot" | "alpha";
   binanceOnCmc?: boolean;
@@ -248,7 +249,9 @@ export default function KimchiView() {
         if (minVolume > 0 && (item.volumeKrw ?? 0) < minVolume) return false;
         const query = search.trim().toLowerCase();
         if (!query) return true;
-        return item.coin.toLowerCase().includes(query) || item.nameKr.toLowerCase().includes(query);
+        const nameKo = (item.nameKr || "").toLowerCase();
+        const nameEn = (item.nameEn || "").toLowerCase();
+        return item.coin.toLowerCase().includes(query) || nameKo.includes(query) || nameEn.includes(query);
       })
       .sort((left, right) => {
         // Favorites always float to the top (alphabetical among themselves)
@@ -302,10 +305,10 @@ export default function KimchiView() {
             className="w-full md:w-56 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm outline-none focus:border-orange-500"
           />
           <select value={minVolume} onChange={event => setMinVolume(Number(event.target.value))} className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs text-zinc-400 outline-none">
-            <option value={0}>전체 유동성</option>
-            <option value={100_000_000}>1억 이상</option>
-            <option value={1_000_000_000}>10억 이상</option>
-            <option value={10_000_000_000}>100억 이상</option>
+            <option value={0}>{t("kimchi.filter.allVolume")}</option>
+            <option value={100_000_000}>{t("kimchi.filter.volume100m")}</option>
+            <option value={1_000_000_000}>{t("kimchi.filter.volume1b")}</option>
+            <option value={10_000_000_000}>{t("kimchi.filter.volume10b")}</option>
           </select>
           <label className="flex items-center gap-2 text-xs text-zinc-400 cursor-pointer select-none" title={lang === "ko" ? "Binance와 CoinMarketCap 가격 오차가 5% 이내인 페어만 표시" : "Show only pairs where Binance and CMC prices agree within 5%"}>
             <button onClick={() => setVerifiedOnly(value => !value)} className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${verifiedOnly ? "bg-emerald-600" : "bg-zinc-700"}`}>
@@ -324,41 +327,41 @@ export default function KimchiView() {
         <table className="w-full text-sm min-w-[1180px]">
           <thead>
             <tr className="bg-zinc-900/80 text-zinc-500 text-xs">
-              <th className="text-left font-medium px-4 py-2.5">Coin</th>
-              <th className="text-right font-medium px-4 py-2.5">24h 거래대금</th>
-              <th className="text-center font-medium px-2 py-2.5">추이</th>
-              <th className="text-right font-medium px-4 py-2.5">Upbit (KRW) <span className="text-[10px] font-normal">매도 Bid</span></th>
-              <th className="text-right font-medium px-4 py-2.5">Upbit (USD)</th>
-              <th className="text-right font-medium px-4 py-2.5">Global (USD) <span className="text-[10px] font-normal">매수 Ask</span></th>
-              <th className="text-right font-medium px-4 py-2.5">Global (KRW)</th>
+              <th className="text-left font-medium px-4 py-2.5">{t("kimchi.header.coin")}</th>
+              <th className="text-right font-medium px-4 py-2.5">{t("kimchi.header.volume")}</th>
+              <th className="text-center font-medium px-2 py-2.5">{t("kimchi.header.trend")}</th>
+              <th className="text-right font-medium px-4 py-2.5">{t("kimchi.header.upbitKrw")} <span className="text-[10px] font-normal">{t("kimchi.header.upbitKrwBid")}</span></th>
+              <th className="text-right font-medium px-4 py-2.5">{t("kimchi.header.upbitUsd")}</th>
+              <th className="text-right font-medium px-4 py-2.5">{t("kimchi.header.globalUsd")} <span className="text-[10px] font-normal">{t("kimchi.header.globalUsdAsk")}</span></th>
+              <th className="text-right font-medium px-4 py-2.5">{t("kimchi.header.globalKrw")}</th>
               <th
                 className="text-right font-medium px-4 py-2.5 cursor-pointer hover:text-zinc-300 select-none"
-                title="클릭하여 CMC 오차 기준 정렬"
+                title={lang === "ko" ? "클릭하여 CMC 오차 기준 정렬" : "Sort by CMC deviation"}
                 onClick={() => toggleSort("cmcDev")}
               >
-                CMC Check {sortKey === "cmcDev" && <span className="text-emerald-400">{sortDir === "desc" ? "▼" : "▲"}</span>}
+                {t("kimchi.header.cmcCheck")} {sortKey === "cmcDev" && <span className="text-emerald-400">{sortDir === "desc" ? "▼" : "▲"}</span>}
               </th>
               <th
                 className="text-right font-medium px-4 py-2.5 cursor-pointer hover:text-zinc-300 select-none"
-                title="오더북 기준: (Upbit Bid - Binance Ask) / Binance Ask — 클릭하여 정렬"
+                title={lang === "ko" ? "오더북 기준: (Upbit Bid - Binance Ask) / Binance Ask — 클릭하여 정렬" : "Orderbook: (Upbit Bid - Binance Ask) / Binance Ask — click to sort"}
                 onClick={() => toggleSort("premium")}
               >
-                Kimchi Premium {sortKey === "premium" && <span className="text-emerald-400">{sortDir === "desc" ? "▼" : "▲"}</span>}
+                {t("kimchi.header.premium")} {sortKey === "premium" && <span className="text-emerald-400">{sortDir === "desc" ? "▼" : "▲"}</span>}
               </th>
               <th
                 className="text-center font-medium px-3 py-2.5 cursor-pointer hover:text-zinc-300 select-none"
-                title="5대 축 가중합 (유동성30/실행25/거래소20/토큰15/변동성10) — 클릭하여 위험도 정렬"
+                title={t("risk.weighted") + " — click to sort"}
                 onClick={() => toggleSort("risk")}
               >
-                Risk {sortKey === "risk" && <span className="text-emerald-400">{sortDir === "desc" ? "▼" : "▲"}</span>}
+                {t("kimchi.header.risk")} {sortKey === "risk" && <span className="text-emerald-400">{sortDir === "desc" ? "▼" : "▲"}</span>}
               </th>
-              <th className="text-center font-medium px-2 py-2.5" title="업비트 입출금 현황 - 클릭하면 공식 페이지로 이동">지갑</th>
+              <th className="text-center font-medium px-2 py-2.5" title={lang === "ko" ? "업비트 입출금 현황 - 클릭하면 공식 페이지로 이동" : "Upbit wallet status — click for official page"}>{t("kimchi.header.wallet")}</th>
               <th
                 className="text-right font-medium px-4 py-2.5 pr-5 cursor-pointer hover:text-zinc-300 select-none"
-                title="Round trip with 1M KRW — 클릭하여 수익 기준 정렬"
+                title={lang === "ko" ? "Round trip with 1M KRW — 클릭하여 수익 기준 정렬" : "Round trip with 1M KRW — click to sort"}
                 onClick={() => toggleSort("roundTrip")}
               >
-                Round Trip (1M KRW) {sortKey === "roundTrip" && <span className="text-emerald-400">{sortDir === "desc" ? "▼" : "▲"}</span>}
+                {t("kimchi.header.roundTrip")} {sortKey === "roundTrip" && <span className="text-emerald-400">{sortDir === "desc" ? "▼" : "▲"}</span>}
               </th>
             </tr>
           </thead>
@@ -375,12 +378,15 @@ export default function KimchiView() {
                     <button
                       onClick={() => toggleFavorite(item.coin)}
                       className={`mr-2 text-base leading-none align-middle transition-transform hover:scale-125 ${favorites.has(item.coin) ? "text-amber-400" : "text-zinc-700 hover:text-zinc-500"}`}
-                      title={favorites.has(item.coin) ? "즐겨찾기 해제" : "즐겨찾기 추가 — 항상 상단 고정"}
+                      title={favorites.has(item.coin) ? (lang === "ko" ? "즐겨찾기 해제" : "Remove from favorites") : (lang === "ko" ? "즐겨찾기 추가 — 항상 상단 고정" : "Add to favorites — pinned to top")}
                     >
                       {favorites.has(item.coin) ? "★" : "☆"}
                     </button>
                     <span className="font-semibold">{item.coin}</span>
-                    {item.nameKr !== item.coin && <span className="ml-2 text-xs text-zinc-500">{item.nameKr}</span>}
+                    {(() => {
+                      const displayName = lang === "ko" ? item.nameKr : (item.nameEn || item.nameKr);
+                      return displayName !== item.coin ? <span className="ml-2 text-xs text-zinc-500">{displayName}</span> : null;
+                    })()}
                     {item.binanceSymbol && (
                       <p className="text-[10px] text-cyan-400/80 font-mono mt-0.5" title="Binance uses a different ticker for this coin (resolved via CoinMarketCap)">
                         Binance{item.binanceSource === "alpha" ? " Alpha" : ""}: {item.binanceSymbol}
@@ -391,17 +397,21 @@ export default function KimchiView() {
                     )}
                   </td>
                   <td className="text-right px-4 py-2.5 font-mono text-zinc-400 text-xs">
-                    {item.volumeKrw ? (item.volumeKrw >= 1_000_000_000 ? `${(item.volumeKrw / 1_000_000_000).toFixed(1)}B` : `${(item.volumeKrw / 100_000_000).toFixed(1)}억`) : "-"}
+                    {item.volumeKrw ? (
+                      lang === "ko"
+                        ? (item.volumeKrw >= 1_000_000_000 ? `${(item.volumeKrw / 1_000_000_000).toFixed(1)}B` : `${(item.volumeKrw / 100_000_000).toFixed(1)}억`)
+                        : (item.volumeKrw >= 1_000_000_000 ? `${(item.volumeKrw / 1_000_000_000).toFixed(1)}B` : `${(item.volumeKrw / 1_000_000).toFixed(0)}M`)
+                    ) : "-"}
                   </td>
                   <td className="text-center px-2 py-2.5">
                     <Sparkline data={(history[item.coin] ?? []).map(point => point.premium)} />
                   </td>
-                  <td className="text-right px-4 py-2.5 font-mono text-zinc-200" title={item.upbitAsk ? `매수 Ask: ${formatKrw(item.upbitAsk)} / 매도 Bid: ${formatKrw(item.upbitBid ?? item.upbitKrw)}` : undefined}>
+                  <td className="text-right px-4 py-2.5 font-mono text-zinc-200" title={item.upbitAsk ? (lang === "ko" ? `매수 Ask: ${formatKrw(item.upbitAsk)} / 매도 Bid: ${formatKrw(item.upbitBid ?? item.upbitKrw)}` : `Ask: ${formatKrw(item.upbitAsk)} / Bid: ${formatKrw(item.upbitBid ?? item.upbitKrw)}`) : undefined}>
                     {formatKrw(item.upbitKrw)}
                     {item.upbitAsk && item.upbitAsk !== item.upbitKrw && <div className="text-[10px] text-zinc-500">Ask {formatKrw(item.upbitAsk)}</div>}
                   </td>
                   <td className="text-right px-4 py-2.5 font-mono text-zinc-400">${formatGlobalPrice(upbitUsd)}</td>
-                  <td className="text-right px-4 py-2.5 font-mono text-zinc-400" title={item.globalBid ? `매수 Ask: $${formatGlobalPrice(item.globalAsk ?? item.globalUsd)} / 매도 Bid: $${formatGlobalPrice(item.globalBid)}` : undefined}>
+                  <td className="text-right px-4 py-2.5 font-mono text-zinc-400" title={item.globalBid ? (lang === "ko" ? `매수 Ask: $${formatGlobalPrice(item.globalAsk ?? item.globalUsd)} / 매도 Bid: $${formatGlobalPrice(item.globalBid)}` : `Ask: $${formatGlobalPrice(item.globalAsk ?? item.globalUsd)} / Bid: $${formatGlobalPrice(item.globalBid)}`) : undefined}>
                     ${formatGlobalPrice(item.globalUsd)}
                     {item.globalBid && item.globalBid !== item.globalUsd && <div className="text-[10px] text-zinc-500">Bid ${formatGlobalPrice(item.globalBid)}</div>}
                   </td>
@@ -412,8 +422,8 @@ export default function KimchiView() {
                       item.binanceOnCmc === true ? "CMC 프로젝트 페이지에 Binance 있음" : item.binanceOnCmc === false ? "CMC 프로젝트 페이지에 Binance 없음 — 동명 티커 의심" : null,
                     ].filter(Boolean).join(" | ") || "CoinMarketCap에 없는 심볼"}>
                     <div>{item.binanceDevPct === undefined ? "-" : `${item.verified ? "✓" : "⚠"} ${item.binanceDevPct?.toFixed(1)}%`}</div>
-                    {item.binanceOnCmc === false && <div className="text-[10px] text-red-400" title="CMC 프로젝트 페이지에 Binance 마켓이 없어 동일 티커의 다른 코인일 가능성이 높습니다">Binance 없음</div>}
-                    {item.binanceOnCmc === true && item.binanceDevPct !== undefined && item.binanceDevPct > 5 && <div className="text-[10px] text-emerald-300">Binance 있음</div>}
+                    {item.binanceOnCmc === false && <div className="text-[10px] text-red-400" title={lang === "ko" ? "CMC 프로젝트 페이지에 Binance 마켓이 없어 동일 티커의 다른 코인일 가능성이 높습니다" : "No Binance market on CMC project page — likely a different coin with same ticker"}>{lang === "ko" ? "Binance 없음" : "No Binance"}</div>}
+                    {item.binanceOnCmc === true && item.binanceDevPct !== undefined && item.binanceDevPct > 5 && <div className="text-[10px] text-emerald-300">{lang === "ko" ? "Binance 있음" : "Has Binance"}</div>}
                   </td>
                   <td className={`text-right px-4 py-2.5 font-mono font-semibold ${positive ? (strong ? "text-red-400" : "text-red-300") : "text-sky-300"}`}>
                     {positive ? "+" : ""}{item.premiumPct.toFixed(2)}%
@@ -421,10 +431,11 @@ export default function KimchiView() {
                   <td className="text-center px-3 py-2.5">
                     {(() => {
                       const r = getKimchiRisk(item);
+                      const gradeLabel = t(`risk.grade.${r.grade}`);
                       return (
                         <span
                           className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium border ${riskColor(r.grade)}`}
-                          title={`Risk ${r.grade} ${r.label} (${r.total}) — 유동성 ${r.axes.liquidity} · 실행 ${r.axes.execution} · 거래소 ${r.axes.exchange} · 토큰 ${r.axes.token} · 변동성 ${r.axes.volatility}`}
+                          title={`Risk ${r.grade} ${gradeLabel} (${r.total}) — ${t("risk.axis.liquidity")} ${r.axes.liquidity} · ${t("risk.axis.execution")} ${r.axes.execution} · ${t("risk.axis.exchange")} ${r.axes.exchange} · ${t("risk.axis.token")} ${r.axes.token} · ${t("risk.axis.volatility")} ${r.axes.volatility}`}
                         >
                           {r.grade} {r.total}
                         </span>
@@ -437,7 +448,7 @@ export default function KimchiView() {
                       const href = "https://www.upbit.com/service_center/wallet_status";
                       if (!wallet) {
                         return (
-                          <a href={href} target="_blank" rel="noopener noreferrer" className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-zinc-800 hover:bg-zinc-700 text-zinc-500 transition-colors" title="지갑 상태 정보 없음 — 공식 페이지에서 확인">
+                          <a href={href} target="_blank" rel="noopener noreferrer" className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-zinc-800 hover:bg-zinc-700 text-zinc-500 transition-colors" title={lang === "ko" ? "지갑 상태 정보 없음 — 공식 페이지에서 확인" : "No wallet status — check official page"}>
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 12V8H6a2 2 0 0 1-2-2c0-1.1.9-2 2-2h12v4"/><path d="M20 12a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2"/><path d="M20 12a2 2 0 0 0 2 2v2a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2c0-1.1.9-2 2-2h12z"/><circle cx="8" cy="8" r="1"/><circle cx="8" cy="16" r="1"/></svg>
                           </a>
                         );
@@ -445,8 +456,8 @@ export default function KimchiView() {
                       const isWorking = wallet.wallet_state === "working" && wallet.block_state === "normal" && !wallet.message;
                       const isWithdrawOnly = wallet.wallet_state === "withdraw_only";
                       const color = isWorking ? "text-emerald-400 bg-emerald-950/30" : isWithdrawOnly ? "text-amber-400 bg-amber-950/30" : "text-red-400 bg-red-950/30";
-                      const label = isWorking ? "정상" : isWithdrawOnly ? "출금만" : wallet.wallet_state;
-                      const title = wallet.message ? `${label}: ${wallet.message}` : isWorking ? "입출금 정상 — 클릭하면 공식 현황 페이지" : `${label} — 클릭하면 공식 현황 페이지`;
+                      const label = isWorking ? t("kimchi.wallet.normal") : isWithdrawOnly ? t("kimchi.wallet.withdrawOnly") : wallet.wallet_state;
+                      const title = wallet.message ? `${label}: ${wallet.message}` : isWorking ? t("kimchi.wallet.tooltipNormal") : `${label} — ${lang === "ko" ? "클릭하면 공식 현황 페이지" : "click for official status"}`;
                       return (
                         <a href={href} target="_blank" rel="noopener noreferrer" className={`inline-flex items-center justify-center px-2 py-0.5 rounded-full text-[10px] font-medium ${color} hover:opacity-80 transition-colors`} title={title}>
                           {isWorking ? "●" : isWithdrawOnly ? "◐" : "●"} <span className="ml-1 hidden xl:inline">{label}</span>
@@ -469,10 +480,10 @@ export default function KimchiView() {
               );
             })}
             {filtered.length === 0 && !loading && (
-              <tr><td colSpan={12} className="text-center text-zinc-500 py-8">No pairs match the search.</td></tr>
+              <tr><td colSpan={12} className="text-center text-zinc-500 py-8">{t("kimchi.noMatch")}</td></tr>
             )}
             {loading && items.length === 0 && (
-              <tr><td colSpan={12} className="text-center text-zinc-500 py-8 animate-pulse">Loading all KRW pairs…</td></tr>
+              <tr><td colSpan={12} className="text-center text-zinc-500 py-8 animate-pulse">{t("kimchi.loadingPairs")}</td></tr>
             )}
           </tbody>
         </table>

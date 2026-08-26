@@ -7,6 +7,7 @@ export const dynamic = "force-dynamic";
 export interface KimchiItem {
   coin: string;            // Upbit ticker
   nameKr: string;
+  nameEn: string;
   binanceSymbol?: string;  // ticker actually used on Binance (may differ)
   binanceSource?: "spot" | "alpha"; // alpha = Binance Alpha (pre-spot listing)
   binanceOnCmc?: boolean;  // does CMC project page list Binance as a market? (symbol-collision check)
@@ -33,7 +34,7 @@ export interface KimchiItem {
 }
 
 const MARKET_NAMES_TTL_MS = 24 * 60 * 60 * 1000;
-let marketNamesCache: { at: number; names: Map<string, string> } | null = null;
+let marketNamesCache: { at: number; names: Map<string, { ko: string; en: string }> } | null = null;
 
 const CMC_TTL_MS = 10 * 60 * 1000;
 let cmcCache: { at: number; entries: Map<string, { price: number; id: number }> } | null = null;
@@ -253,16 +254,16 @@ async function resolveBinanceAliases(coins: string[], cmcEntries: Map<string, { 
   return map;
 }
 
-async function getUpbitKrwMarketNames(): Promise<Map<string, string>> {
+async function getUpbitKrwMarketNames(): Promise<Map<string, { ko: string; en: string }>> {
   if (marketNamesCache && Date.now() - marketNamesCache.at < MARKET_NAMES_TTL_MS) return marketNamesCache.names;
   try {
     const response = await fetch("https://api.upbit.com/v1/market/all?isDetails=false", { signal: AbortSignal.timeout(8_000) });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json() as { market: string; korean_name: string; english_name: string }[];
-    const names = new Map<string, string>();
+    const names = new Map<string, { ko: string; en: string }>();
     for (const entry of data) {
       if (!entry.market.startsWith("KRW-")) continue;
-      names.set(entry.market, entry.korean_name);
+      names.set(entry.market, { ko: entry.korean_name, en: entry.english_name });
     }
     if (names.size > 0) {
       marketNamesCache = { at: Date.now(), names };
@@ -442,7 +443,7 @@ export async function GET() {
       // Premium is measured against the CMC/Coingecko reference when available, otherwise against the executable ask
       const premiumBase = referenceUsd && referenceUsd > 0 ? referenceUsd : globalAsk;
       const premium = ((upbitBid / fxRate - premiumBase) / premiumBase) * 100;
-      const item = buildItemWithOrderbook(coin, coin, names.get(`KRW-${coin}`) ?? coin, upbitAsk, upbitBid, globalAsk, globalBid, premium, fxRate, cmcEntries, volumeMap.get(coin));
+      const item = buildItemWithOrderbook(coin, coin, names.get(`KRW-${coin}`)?.ko ?? coin, names.get(`KRW-${coin}`)?.en ?? coin, upbitAsk, upbitBid, globalAsk, globalBid, premium, fxRate, cmcEntries, volumeMap.get(coin));
       if (source === "alpha") item.binanceSource = "alpha";
       // If Gate was used and we have no CMC entry, still mark the source for UI
       if (gateBook && !binanceBook) {
@@ -464,7 +465,7 @@ export async function GET() {
         const cmcEntry = cmcEntries.get(coin);
         const premiumBase = cmcEntry?.price && cmcEntry.price > 0 ? cmcEntry.price : globalAsk;
         const premium = ((book.bid / fxRate - premiumBase) / premiumBase) * 100;
-        const item = buildItemWithOrderbook(coin, resolution.ticker, names.get(`KRW-${coin}`) ?? coin, book.ask, book.bid, globalAsk, globalBid, premium, fxRate, cmcEntries, volumeMap.get(coin));
+        const item = buildItemWithOrderbook(coin, resolution.ticker, names.get(`KRW-${coin}`)?.ko ?? coin, names.get(`KRW-${coin}`)?.en ?? coin, book.ask, book.bid, globalAsk, globalBid, premium, fxRate, cmcEntries, volumeMap.get(coin));
         item.binanceSource = resolution.source;
         items.push(item);
       }
@@ -477,7 +478,7 @@ export async function GET() {
         const cmcEntry = cmcEntries.get(coin);
         const premiumBase = cmcEntry?.price && cmcEntry.price > 0 ? cmcEntry.price : gateBook.ask;
         const premium = ((book.bid / fxRate - premiumBase) / premiumBase) * 100;
-        const item = buildItemWithOrderbook(coin, coin, names.get(`KRW-${coin}`) ?? coin, book.ask, book.bid, gateBook.ask, gateBook.bid, premium, fxRate, cmcEntries, volumeMap.get(coin));
+        const item = buildItemWithOrderbook(coin, coin, names.get(`KRW-${coin}`)?.ko ?? coin, names.get(`KRW-${coin}`)?.en ?? coin, book.ask, book.bid, gateBook.ask, gateBook.bid, premium, fxRate, cmcEntries, volumeMap.get(coin));
         item.binanceSource = "alpha";
         items.push(item);
       }
@@ -491,14 +492,14 @@ export async function GET() {
         if (coin !== "USDT") unmatched.push(coin);
         continue;
       }
-      items.push(buildItem(coin, coin, names.get(`KRW-${coin}`) ?? coin, upbitKrw, globalUsd, fxRate, cmcEntries, volumeMap.get(coin)));
+      items.push(buildItem(coin, coin, names.get(`KRW-${coin}`)?.ko ?? coin, names.get(`KRW-${coin}`)?.en ?? coin, upbitKrw, globalUsd, fxRate, cmcEntries, volumeMap.get(coin)));
     }
     if (unmatched.length > 0) {
       const aliases = await resolveBinanceAliases(unmatched, cmcEntries);
       for (const [coin, resolution] of aliases) {
         const upbitKrw = tickers!.get(coin);
         if (!upbitKrw || !resolution.price) continue;
-        const item = buildItem(coin, resolution.ticker, names.get(`KRW-${coin}`) ?? coin, upbitKrw, resolution.price, fxRate, cmcEntries, volumeMap.get(coin));
+        const item = buildItem(coin, resolution.ticker, names.get(`KRW-${coin}`)?.ko ?? coin, names.get(`KRW-${coin}`)?.en ?? coin, upbitKrw, resolution.price, fxRate, cmcEntries, volumeMap.get(coin));
         item.binanceSource = resolution.source;
         items.push(item);
       }
@@ -603,6 +604,7 @@ function buildItem(
   coin: string,
   binanceSymbol: string,
   nameKr: string,
+  nameEn: string,
   upbitKrw: number,
   globalUsd: number,
   fxRate: number,
@@ -616,6 +618,7 @@ function buildItem(
   return {
     coin,
     nameKr,
+    nameEn,
     binanceSymbol: binanceSymbol !== coin ? binanceSymbol : undefined,
     upbitKrw,
     globalUsd,
@@ -632,6 +635,7 @@ function buildItemWithOrderbook(
   coin: string,
   binanceSymbol: string,
   nameKr: string,
+  nameEn: string,
   upbitAsk: number,
   upbitBid: number,
   globalAsk: number,
@@ -647,6 +651,7 @@ function buildItemWithOrderbook(
   return {
     coin,
     nameKr,
+    nameEn,
     binanceSymbol: binanceSymbol !== coin ? binanceSymbol : undefined,
     upbitKrw: upbitBid,
     upbitAsk,

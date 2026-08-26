@@ -171,10 +171,10 @@ export default function DexArbitrageView() {
       )}
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <StatCard label="Opportunities" value={opportunities.length} accent />
-        <StatCard label="Chains Active" value={data?.chainsScanned ?? 0} />
-        <StatCard label="Cross-Chain" value={data?.crossChainCount ?? 0} />
-        <StatCard label="Same-Chain" value={data?.sameChainCount ?? 0} />
+        <StatCard label={t("dexArb.stats.opportunities")} value={opportunities.length} accent />
+        <StatCard label={t("dexArb.stats.chains")} value={data?.chainsScanned ?? 0} />
+        <StatCard label={t("dexArb.stats.crossChain")} value={data?.crossChainCount ?? 0} />
+        <StatCard label={t("dexArb.stats.sameChain")} value={data?.sameChainCount ?? 0} />
       </div>
 
       {error && (
@@ -193,8 +193,8 @@ export default function DexArbitrageView() {
 
       {opportunities.length === 0 && !loading && !error && (
         <div className="rounded-xl border border-zinc-800 p-12 text-center">
-          <p className="text-lg text-zinc-400 mb-2">No profitable opportunities found</p>
-          <p className="text-sm text-zinc-600">Scanning {data?.totalScannedPairs ?? 0} pairs across {data?.chainsScanned ?? 0} chains.</p>
+          <p className="text-lg text-zinc-400 mb-2">{t("dexArb.noOpp.title")}</p>
+          <p className="text-sm text-zinc-600">{t("dexArb.noOpp.desc")}</p>
         </div>
       )}
 
@@ -202,7 +202,7 @@ export default function DexArbitrageView() {
       <div className="mt-8">
         {(data?.stableArbs?.length ?? 0) === 0 ? (
           <div className="rounded-xl border border-zinc-800 p-6 text-center text-sm text-zinc-500">
-            {loading ? <span className="animate-pulse">Loading stablecoin quotes…</span> : "현재 스테이블 페어 스프레드가 없거나 2개 체인 이상에서 호가가 없습니다."}
+            {loading ? <span className="animate-pulse">{t("dexArb.stable.loading")}</span> : t("dexArb.stable.empty")}
           </div>
         ) : (
           <div className="space-y-3">
@@ -289,7 +289,7 @@ export default function DexArbitrageView() {
       </div>
 
       {loading && !data && (
-        <div className="rounded-xl border border-zinc-800 p-12 text-center animate-pulse"><p className="text-lg text-zinc-500">Scanning all chains…</p></div>
+        <div className="rounded-xl border border-zinc-800 p-12 text-center animate-pulse"><p className="text-lg text-zinc-500">{t("dexArb.loading")}</p></div>
       )}
     </>
   );
@@ -307,6 +307,7 @@ function StatCard({ label, value, accent }: { label: string; value: number; acce
 function OpportunityCard({ opp, fmtUsd, fmtPct, fmtPrice, fxRate, walletMap, inventoryMode }: {
   opp: ArbitrageOpportunity; fmtUsd: (n: number) => string; fmtPct: (n: number) => string; fmtPrice: (n: number) => string; fxRate: number; walletMap: Map<string, { wallet_state: string; block_state: string; message: string }>; inventoryMode?: boolean;
 }) {
+  const { t, lang } = useLang();
   const isDexToUpbit = opp.direction === "dexToUpbit";
 
   // Compute expected execution time for this opportunity (also validates the coin-chain combo)
@@ -437,16 +438,16 @@ function OpportunityCard({ opp, fmtUsd, fmtPct, fmtPrice, fxRate, walletMap, inv
 
       <div className="mt-3 pt-3 border-t border-zinc-800/60">
         <div className="flex items-center justify-between mb-2">
-          <p className="text-xs font-medium text-zinc-400">Risk Breakdown <span className={`ml-2 px-2 py-0.5 rounded-full text-xs border ${riskColor(displayRisk.grade)}`}>{displayRisk.grade} {displayRisk.label} · {displayRisk.total}/100{inventoryMode ? " (보유)" : ""}</span></p>
-          <span className="text-[10px] text-zinc-600">가중합 30/25/20/15/10 {inventoryMode ? "· 보유가정" : ""}</span>
+          <p className="text-xs font-medium text-zinc-400">{t("risk.breakdown")} <span className={`ml-2 px-2 py-0.5 rounded-full text-xs border ${riskColor(displayRisk.grade)}`}>{displayRisk.grade} {t(`risk.grade.${displayRisk.grade}`)} · {displayRisk.total}/100{inventoryMode ? (lang === "ko" ? " (보유)" : " (inv)") : ""}</span></p>
+          <span className="text-[10px] text-zinc-600">{t("risk.weighted")} {inventoryMode ? (lang === "ko" ? "· 보유가정" : "· inventory") : ""}</span>
         </div>
         <div className="space-y-1.5">
           {([
-            ["유동성", displayRisk.axes.liquidity, risk.axes.liquidity],
-            ["실행", displayRisk.axes.execution, risk.axes.execution],
-            ["거래소", displayRisk.axes.exchange, risk.axes.exchange],
-            ["토큰", displayRisk.axes.token, risk.axes.token],
-            ["변동성", displayRisk.axes.volatility, risk.axes.volatility],
+            [t("risk.axis.liquidity"), displayRisk.axes.liquidity, risk.axes.liquidity],
+            [t("risk.axis.execution"), displayRisk.axes.execution, risk.axes.execution],
+            [t("risk.axis.exchange"), displayRisk.axes.exchange, risk.axes.exchange],
+            [t("risk.axis.token"), displayRisk.axes.token, risk.axes.token],
+            [t("risk.axis.volatility"), displayRisk.axes.volatility, risk.axes.volatility],
           ] as const).map(([label, val, orig]) => (
             <div key={label} className="flex items-center gap-2">
               <span className="text-[11px] text-zinc-500 w-10">{label}</span>
@@ -458,7 +459,7 @@ function OpportunityCard({ opp, fmtUsd, fmtPct, fmtPrice, fxRate, walletMap, inv
             </div>
           ))}
         </div>
-        {inventoryMode && <p className="text-[10px] text-zinc-600 mt-2">보유가정: 브릿지 0%, 실행 2초, 가스 1회만 반영. 원래 점수는 취소선으로 표시.</p>}
+        {inventoryMode && <p className="text-[10px] text-zinc-600 mt-2">{lang === "ko" ? "보유가정: 브릿지 0%, 실행 2초, 가스 1회만 반영. 원래 점수는 취소선으로 표시." : "Inventory: bridge 0%, exec 2s, single gas. Original strikethrough."}</p>}
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-sm mt-3">
@@ -466,12 +467,12 @@ function OpportunityCard({ opp, fmtUsd, fmtPct, fmtPrice, fxRate, walletMap, inv
           <p className="text-xs text-zinc-500 mb-0.5 flex items-center gap-1">Buy on {(() => {
             const wallet = walletMap.get(opp.buyCoin);
             const href = "https://www.upbit.com/service_center/wallet_status";
-            if (!wallet) return <a href={href} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="inline-flex items-center gap-0.5 text-[10px] text-zinc-500 hover:text-emerald-400" title="지갑 상태 정보 없음 — 공식 페이지에서 확인"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 12V8H6a2 2 0 0 1-2-2c0-1.1.9-2 2-2h12v4"/><path d="M20 12a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2"/><path d="M20 12a2 2 0 0 0 2 2v2a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2c0-1.1.9-2 2-2h12z"/></svg>지갑</a>;
+            if (!wallet) return <a href={href} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="inline-flex items-center gap-0.5 text-[10px] text-zinc-500 hover:text-emerald-400" title={lang === "ko" ? "지갑 상태 정보 없음 — 공식 페이지에서 확인" : "No wallet status — check official page"}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 12V8H6a2 2 0 0 1-2-2c0-1.1.9-2 2-2h12v4"/><path d="M20 12a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2"/><path d="M20 12a2 2 0 0 0 2 2v2a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2c0-1.1.9-2 2-2h12z"/></svg>{t("kimchi.header.wallet")}</a>;
             const isWorking = wallet.wallet_state === "working" && wallet.block_state === "normal" && !wallet.message;
             const isWithdrawOnly = wallet.wallet_state === "withdraw_only";
-            const label = isWorking ? "정상" : isWithdrawOnly ? "출금만" : wallet.wallet_state;
+            const label = isWorking ? t("kimchi.wallet.normal") : isWithdrawOnly ? t("kimchi.wallet.withdrawOnly") : wallet.wallet_state;
             const color = isWorking ? "text-emerald-400" : isWithdrawOnly ? "text-amber-400" : "text-red-400";
-            const title = wallet.message ? `${label}: ${wallet.message} — 클릭하면 공식 현황 페이지` : `${label} — 클릭하면 공식 현황 페이지`;
+            const title = wallet.message ? `${label}: ${wallet.message}` : isWorking ? t("kimchi.wallet.tooltipNormal") : `${label} — ${lang === "ko" ? "클릭하면 공식 현황 페이지" : "click for official status"}`;
             return <a href={href} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className={`inline-flex items-center gap-0.5 text-[10px] ${color} hover:opacity-80`} title={title}>{isWorking ? "●" : isWithdrawOnly ? "◐" : "●"} {label}</a>;
           })()}</p>
           <p className="font-medium">{CHAIN_NAMES[opp.buyChain] ?? opp.buyChain} &middot; {opp.buyDex}</p>
