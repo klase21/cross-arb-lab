@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { usePollingInterval } from "@/lib/use-polling";
+import { useLang } from "@/lib/i18n";
 
 interface CexArbitrageOpportunity {
   coin: string;
@@ -16,6 +17,7 @@ interface CexArbitrageOpportunity {
 }
 
 export default function CexCexView() {
+  const { t, lang } = useLang();
   const [opportunities, setOpportunities] = useState<CexArbitrageOpportunity[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
@@ -30,7 +32,7 @@ export default function CexCexView() {
       setOpportunities(next);
       const { notifyCex } = await import("@/lib/notifications");
       for (const opp of next) notifyCex(opp.coin, opp.buyCex, opp.sellCex, opp.netSpreadPct, "cex");
-      setLastUpdated(new Date().toLocaleTimeString("ko-KR"));
+      setLastUpdated(new Date().toLocaleTimeString(lang === "ko" ? "ko-KR" : "en-US"));
     } catch {} finally {
       setLoading(false);
     }
@@ -47,8 +49,8 @@ export default function CexCexView() {
   return (
     <>
       <div className="flex items-center justify-between mb-4">
-        <p className="text-xs text-zinc-500">Monitoring Upbit, Bithumb, Binance, Bybit, OKX spot prices.</p>
-        {lastUpdated && <p className="text-xs text-zinc-600">Last updated: {lastUpdated}</p>}
+        <p className="text-xs text-zinc-500">{t("cex.subtitle")}</p>
+        {lastUpdated && <p className="text-xs text-zinc-600">{t("common.lastUpdated")}: {lastUpdated}</p>}
       </div>
 
       {opportunities.length > 0 && (

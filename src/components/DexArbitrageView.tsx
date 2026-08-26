@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { simulateTiming } from "@/lib/timing-simulator";
 import { usePollingInterval } from "@/lib/use-polling";
 import { scoreDexArb, riskColor, riskBarColor } from "@/lib/risk-scorer";
+import { useLang } from "@/lib/i18n";
 
 interface ArbitrageOpportunity {
   pair: string;
@@ -99,6 +100,7 @@ function formatStablePrice(v: number) {
 }
 
 export default function DexArbitrageView() {
+  const { t, lang } = useLang();
   const [data, setData] = useState<ScanResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -127,7 +129,7 @@ export default function DexArbitrageView() {
         for (const entry of list) if (entry.currency && !map.has(entry.currency)) map.set(entry.currency, { wallet_state: entry.wallet_state, block_state: entry.block_state, message: entry.message ?? "" });
         if (map.size > 0) setWalletMap(map);
       }
-      setLastUpdated(new Date().toLocaleTimeString("ko-KR"));
+      setLastUpdated(new Date().toLocaleTimeString(lang === "ko" ? "ko-KR" : "en-US"));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Unknown error");
     } finally {
@@ -151,20 +153,20 @@ export default function DexArbitrageView() {
   return (
     <>
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
-        <p className="text-xs text-zinc-500">Buy on Upbit (KRW) &rarr; withdraw &rarr; sell on-chain via Uniswap / Sushi web quotes.</p>
+        <p className="text-xs text-zinc-500">{t("dexArb.subtitle")}</p>
         <div className="flex items-center gap-3">
-          <label className="flex items-center gap-2 text-xs text-zinc-400 cursor-pointer select-none" title="보유자산 가정: 출금·브릿지·대기시간 제외, 양쪽에 미리 보유한 경우의 순수 스프레드">
+          <label className="flex items-center gap-2 text-xs text-zinc-400 cursor-pointer select-none" title={t("dexArb.inventoryBanner")}>
             <button onClick={() => setInventoryMode(v => !v)} className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${inventoryMode ? "bg-emerald-600" : "bg-zinc-700"}`}>
               <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${inventoryMode ? "translate-x-[18px]" : "translate-x-1"}`} />
             </button>
-            보유자산 가정
+            {t("dexArb.inventoryToggle")}
           </label>
-          {lastUpdated && <p className="text-xs text-zinc-600">Last updated: {lastUpdated}</p>}
+          {lastUpdated && <p className="text-xs text-zinc-600">{t("common.lastUpdated")}: {lastUpdated}</p>}
         </div>
       </div>
       {inventoryMode && (
         <div className="rounded-lg border border-emerald-900/50 bg-emerald-950/20 px-4 py-3 mb-4 text-xs text-emerald-200">
-          <span className="font-medium">보유자산 모드 ON</span> — 출금 수수료·가스·브릿지·대기시간을 제외한 순수 스프레드만 표시. 양쪽 체인/거래소에 미리 보유한 경우 즉시 양방향 체결 가정 (CEX Arbitrage 탭은 이 로직 전용).
+          {t("dexArb.inventoryBanner")}
         </div>
       )}
 

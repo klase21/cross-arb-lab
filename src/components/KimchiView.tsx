@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePollingInterval } from "@/lib/use-polling";
 import { scoreKimchi, riskColor } from "@/lib/risk-scorer";
+import { useLang } from "@/lib/i18n";
 
 interface KimchiItem {
   coin: string;
@@ -64,6 +65,7 @@ function Sparkline({ data }: { data: number[] }) {
 }
 
 export default function KimchiView() {
+  const { t, lang } = useLang();
   const [items, setItems] = useState<KimchiItem[]>([]);
   const [fxRate, setFxRate] = useState(1350);
   const [search, setSearch] = useState("");
@@ -164,7 +166,7 @@ export default function KimchiView() {
         }
         if (map.size > 0) setWalletMap(map);
       }
-      setLastUpdated(new Date().toLocaleTimeString("ko-KR"));
+      setLastUpdated(new Date().toLocaleTimeString(lang === "ko" ? "ko-KR" : "en-US"));
     } catch {} finally {
       setLoading(false);
     }
@@ -264,18 +266,22 @@ export default function KimchiView() {
     <>
       <div className="rounded-xl border border-orange-900/50 bg-orange-950/20 p-4 mb-4">
         <div className="flex items-center justify-between flex-wrap gap-2">
-          <p className="text-sm text-orange-300 font-medium">All Upbit KRW pairs vs Binance global price</p>
+          <p className="text-sm text-orange-300 font-medium">{t("kimchi.subtitle")}</p>
           <div className="flex items-center gap-3">
-            {lastUpdated && <span className="text-xs text-zinc-600">Last updated: {lastUpdated}</span>}
+            {lastUpdated && <span className="text-xs text-zinc-600">{t("common.lastUpdated")}: {lastUpdated}</span>}
             <span className="text-xs font-mono text-zinc-400" title="Live USD/KRW rate used to convert Upbit KRW prices to USD">FX: {fxRate.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 5 })} KRW/USD</span>
           </div>
         </div>
-        <p className="text-xs text-zinc-500 mt-1">Premium = (Upbit 매도 Bid &divide; {fxRate.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 5 })} - Binance 매수 Ask) &divide; Binance Ask. 오더북 최우선 호가 기준이며, 입출금 상태는 우측 지갑 아이콘에서 확인하세요.</p>
+        <p className="text-xs text-zinc-500 mt-1">
+          {lang === "ko"
+            ? `Premium = (업비트 매도 Bid ÷ ${fxRate.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 5 })} - 바이낸스 매수 Ask) ÷ 바이낸스 Ask. 오더북 최우선 호가 기준이며, 입출금 상태는 우측 지갑 아이콘에서 확인하세요.`
+            : `Premium = (Upbit Bid ÷ ${fxRate.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 5 })} - Binance Ask) ÷ Binance Ask. Based on top orderbook levels; check wallet status on the right.`}
+        </p>
       </div>
 
       {topMovers.length > 0 && (
         <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 px-4 py-3 mb-3">
-          <p className="text-xs font-medium text-zinc-400 mb-2">Top Movers (1h premium change)</p>
+          <p className="text-xs font-medium text-zinc-400 mb-2">{t("kimchi.trending")}</p>
           <div className="flex flex-wrap gap-2">
             {topMovers.map(mover => (
               <span key={mover.coin} className={`px-2 py-1 rounded-full text-xs font-mono ${mover.delta >= 0 ? "bg-red-950/40 text-red-300" : "bg-sky-950/40 text-sky-300"}`}>
@@ -290,7 +296,7 @@ export default function KimchiView() {
         <div className="flex items-center gap-3 flex-wrap">
           <input
             type="text"
-            placeholder="코인 검색 (심볼 또는 한글명)…"
+            placeholder={t("kimchi.searchPlaceholder")}
             value={search}
             onChange={event => setSearch(event.target.value)}
             className="w-full md:w-56 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm outline-none focus:border-orange-500"
@@ -301,16 +307,16 @@ export default function KimchiView() {
             <option value={1_000_000_000}>10억 이상</option>
             <option value={10_000_000_000}>100억 이상</option>
           </select>
-          <label className="flex items-center gap-2 text-xs text-zinc-400 cursor-pointer select-none" title="Binance와 CoinMarketCap 가격 오차가 5% 이내인 페어만 표시">
+          <label className="flex items-center gap-2 text-xs text-zinc-400 cursor-pointer select-none" title={lang === "ko" ? "Binance와 CoinMarketCap 가격 오차가 5% 이내인 페어만 표시" : "Show only pairs where Binance and CMC prices agree within 5%"}>
             <button onClick={() => setVerifiedOnly(value => !value)} className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${verifiedOnly ? "bg-emerald-600" : "bg-zinc-700"}`}>
               <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${verifiedOnly ? "translate-x-[18px]" : "translate-x-1"}`} />
             </button>
-            CMC 검증 통과만
+            {t("kimchi.verifiedOnly")}
           </label>
         </div>
         <div className="flex items-center gap-3">
-          <p className="text-xs text-zinc-500">{filtered.length} / {items.length} pairs tracking</p>
-          <button onClick={exportCsv} className="px-3 py-1.5 rounded-lg border border-zinc-700 hover:border-zinc-500 text-xs text-zinc-300">CSV 내보내기</button>
+          <p className="text-xs text-zinc-500">{filtered.length} / {items.length} {t("kimchi.pairsTracking")}</p>
+          <button onClick={exportCsv} className="px-3 py-1.5 rounded-lg border border-zinc-700 hover:border-zinc-500 text-xs text-zinc-300">{t("kimchi.exportCsv")}</button>
         </div>
       </div>
 

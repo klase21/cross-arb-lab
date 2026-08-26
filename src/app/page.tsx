@@ -8,30 +8,32 @@ import SettingsView from "@/components/SettingsView";
 import CalculatorView from "@/components/CalculatorView";
 import SimulatorView from "@/components/SimulatorView";
 import CexCexView from "@/components/CexCexView";
+import { LangProvider, useLang } from "@/lib/i18n";
 
-const TABS = [
-  { id: "kimchi", label: "김치 프리미엄", title: "김치 프리미엄", desc: "업비트 전 종목 vs 글로벌 시세 — 오더북·CMC 검증·라운드트립 수익" },
-  { id: "arbitrage", label: "출금 차익", title: "출금 차익", desc: "업비트 매수 → 출금 → DEX 매도 — 브릿지·가스 포함 실제 수익" },
-  { id: "cex", label: "보유 차익", title: "보유 차익", desc: "양 거래소 보유 가정 — 출금 없이 즉시 양방향 체결 (Upbit·Bithumb·Binance·Bybit·OKX)" },
-  { id: "compare", label: "시세 비교", title: "시세 비교", desc: "Uniswap·Sushi 호가를 6개 체인에서 비교" },
-  { id: "calculator", label: "수익 계산기", title: "수익 계산기", desc: "투자금·수수료·손익분기 시뮬레이션" },
-  { id: "simulator", label: "실행 시뮬", title: "실행 시뮬레이터", desc: "단계별 소요시간·병목 분석" },
-  { id: "settings", label: "설정", title: "설정", desc: "갱신주기·알림·위험 가중치" },
+const TAB_DEFS = [
+  { id: "kimchi" as const, labelKey: "tab.kimchi.label", titleKey: "tab.kimchi.title", descKey: "tab.kimchi.desc" },
+  { id: "arbitrage" as const, labelKey: "tab.arbitrage.label", titleKey: "tab.arbitrage.title", descKey: "tab.arbitrage.desc" },
+  { id: "cex" as const, labelKey: "tab.cex.label", titleKey: "tab.cex.title", descKey: "tab.cex.desc" },
+  { id: "compare" as const, labelKey: "tab.compare.label", titleKey: "tab.compare.title", descKey: "tab.compare.desc" },
+  { id: "calculator" as const, labelKey: "tab.calculator.label", titleKey: "tab.calculator.title", descKey: "tab.calculator.desc" },
+  { id: "simulator" as const, labelKey: "tab.simulator.label", titleKey: "tab.simulator.title", descKey: "tab.simulator.desc" },
+  { id: "settings" as const, labelKey: "tab.settings.label", titleKey: "tab.settings.title", descKey: "tab.settings.desc" },
 ] as const;
 
-// UI에서 숨길 탭 (직접 URL ?tab=calculator 등으로는 접근 가능)
-const HIDDEN_TABS = new Set<TabId>(["calculator", "simulator"]);
-const VISIBLE_TABS = TABS.filter(t => !HIDDEN_TABS.has(t.id));
+type TabId = (typeof TAB_DEFS)[number]["id"];
 
-type TabId = (typeof TABS)[number]["id"];
-
-export default function Home() {
+function HomeInner() {
   const [tab, setTab] = useState<TabId>("kimchi");
+  const { lang, setLang, t } = useLang();
+
+  const TABS = TAB_DEFS.map(d => ({ id: d.id, label: t(d.labelKey), title: t(d.titleKey), desc: t(d.descKey) }));
+  const HIDDEN_TABS = new Set<TabId>(["calculator", "simulator"]);
+  const VISIBLE_TABS = TABS.filter(tabItem => !HIDDEN_TABS.has(tabItem.id));
 
   useEffect(() => {
     const initial = new URLSearchParams(window.location.search).get("tab") as TabId | null;
     if (initial && TABS.some(item => item.id === initial)) setTab(initial);
-  }, []);
+  }, [TABS]);
 
   const switchTab = (id: TabId) => {
     setTab(id);
@@ -48,17 +50,33 @@ export default function Home() {
             <h1 className="text-xl font-bold tracking-tight">{current.title}</h1>
             <p className="text-xs text-zinc-500 mt-0.5">{current.desc}</p>
           </div>
-          <nav className="flex-shrink-0 flex rounded-lg border border-zinc-700 overflow-hidden text-sm self-start">
-            {VISIBLE_TABS.map(item => (
+          <div className="flex items-center gap-3 self-start">
+            <div className="flex rounded-lg border border-zinc-700 overflow-hidden text-xs">
               <button
-                key={item.id}
-                onClick={() => switchTab(item.id)}
-                className={`px-4 py-2 transition-colors whitespace-nowrap ${tab === item.id ? "bg-emerald-600 text-white" : "bg-zinc-900 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"}`}
+                onClick={() => setLang("ko")}
+                className={`px-3 py-2 transition-colors ${lang === "ko" ? "bg-zinc-100 text-zinc-900 font-medium" : "bg-zinc-900 text-zinc-400 hover:text-zinc-200"}`}
               >
-                {item.label}
+                KO
               </button>
-            ))}
-          </nav>
+              <button
+                onClick={() => setLang("en")}
+                className={`px-3 py-2 transition-colors ${lang === "en" ? "bg-zinc-100 text-zinc-900 font-medium" : "bg-zinc-900 text-zinc-400 hover:text-zinc-200"}`}
+              >
+                EN
+              </button>
+            </div>
+            <nav className="flex rounded-lg border border-zinc-700 overflow-hidden text-sm">
+              {VISIBLE_TABS.map(item => (
+                <button
+                  key={item.id}
+                  onClick={() => switchTab(item.id)}
+                  className={`px-4 py-2 transition-colors whitespace-nowrap ${tab === item.id ? "bg-emerald-600 text-white" : "bg-zinc-900 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"}`}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </nav>
+          </div>
         </div>
 
         {tab === "kimchi" && <KimchiView />}
@@ -70,5 +88,13 @@ export default function Home() {
         {tab === "settings" && <SettingsView />}
       </main>
     </div>
+  );
+}
+
+export default function Home() {
+  return (
+    <LangProvider>
+      <HomeInner />
+    </LangProvider>
   );
 }
