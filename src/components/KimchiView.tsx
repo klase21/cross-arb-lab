@@ -96,6 +96,7 @@ export default function KimchiView() {
   const [search, setSearch] = useState("");
   const [verifiedOnly, setVerifiedOnly] = useState(false);
   const [reverseOnly, setReverseOnly] = useState(false);
+  const [hideAlpha, setHideAlpha] = useState(false);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [walletMap, setWalletMap] = useState<Map<string, { wallet_state: string; block_state: string; message: string }>>(new Map());
@@ -272,6 +273,7 @@ export default function KimchiView() {
       .filter(item => {
         if (verifiedOnly && !item.verified) return false;
         if (reverseOnly && item.premiumPct > -0.5) return false;
+        if (hideAlpha && item.binanceSource === "alpha") return false;
         if (minVolume > 0 && (item.volumeKrw ?? 0) < minVolume) return false;
         // Hide paused / withdraw_only (입출금 제한) — as requested
         const w = walletMap.get(item.coin);
@@ -295,7 +297,7 @@ export default function KimchiView() {
         if (Number.isNaN(diff)) return 0;
         return sortDir === "desc" ? diff : -diff;
       });
-  }, [items, search, verifiedOnly, reverseOnly, favorites, sortKey, sortDir, walletMap, history, topMovers]);
+  }, [items, search, verifiedOnly, reverseOnly, hideAlpha, favorites, sortKey, sortDir, walletMap, history, topMovers]);
 
   return (
     <>
@@ -362,6 +364,12 @@ export default function KimchiView() {
               <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${verifiedOnly ? "translate-x-[18px]" : "translate-x-1"}`} />
             </button>
             {t("kimchi.verifiedOnly")}
+          </label>
+          <label className="flex items-center gap-2 text-xs cursor-pointer select-none" title={lang === "ko" ? "바이낸스 현물 미상장(Alpha) 코인 숨기기" : "Hide Binance Alpha (pre-spot) coins"}>
+            <button onClick={() => setHideAlpha(v => !v)} className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${hideAlpha ? "bg-cyan-600" : "bg-zinc-700"}`}>
+              <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${hideAlpha ? "translate-x-[18px]" : "translate-x-1"}`} />
+            </button>
+            <span className={hideAlpha ? "text-cyan-300 font-medium" : "text-zinc-400"}>{t("kimchi.hideAlpha")}</span>
           </label>
         </div>
         <div className="flex items-center gap-3">
