@@ -48,23 +48,25 @@ function HomeInner() {
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100">
-      <main className="max-w-[1800px] mx-auto px-8 py-6">
-        <div className="flex items-start justify-between gap-4 mb-6">
+      <main className="max-w-[1800px] mx-auto px-4 md:px-8 py-6">
+        <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-6">
           <div className="flex-1 min-w-0">
             <h1 className="text-xl font-bold tracking-tight">{current.title}</h1>
             <p className="text-xs text-zinc-500 mt-0.5">{current.desc}</p>
           </div>
-            <nav className="flex rounded-lg border border-zinc-700 overflow-hidden text-sm self-start">
+          <div className="-mx-4 md:mx-0 px-4 md:px-0 overflow-x-auto scrollbar-thin">
+            <nav className="flex rounded-lg border border-zinc-700 overflow-hidden text-sm self-start w-max">
               {VISIBLE_TABS.map(item => (
                 <button
                   key={item.id}
                   onClick={() => switchTab(item.id)}
-                  className={`px-4 py-2 transition-colors whitespace-nowrap ${tab === item.id ? "bg-emerald-600 text-white" : "bg-zinc-900 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"}`}
+                  className={`px-3 md:px-4 py-2 transition-colors whitespace-nowrap text-xs md:text-sm ${tab === item.id ? "bg-emerald-600 text-white" : "bg-zinc-900 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"}`}
                 >
                   {item.label}
                 </button>
               ))}
             </nav>
+          </div>
         </div>
 
         {tab === "kimchi" && <KimchiView />}

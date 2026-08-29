@@ -398,7 +398,7 @@ export default function KimchiView() {
         </div>
       </div>
 
-      <div className="rounded-xl border border-zinc-800 overflow-x-auto">
+      <div className="hidden md:block rounded-xl border border-zinc-800 overflow-x-auto">
         <table className="w-full text-sm min-w-[1280px]">
           <thead>
             <tr className="bg-zinc-900/80 text-zinc-500 text-xs">
@@ -597,6 +597,71 @@ export default function KimchiView() {
             )}
           </tbody>
         </table>
+      </div>
+      {/* Mobile card view */}
+      <div className="md:hidden space-y-3">
+        {filtered.map((item, idx) => {
+          const positive = item.premiumPct >= 0;
+          const upbitUsd = item.upbitKrw / fxRate;
+          const trip = item.trip;
+          const r = getKimchiRisk(item);
+          const delta = getDelta(item);
+          const isHotOpportunity = (trip?.netProfitPct ?? -100) > 0 && (delta ?? -10) > 0;
+          const displayName = lang === "ko" ? item.nameKr : (item.nameEn || item.nameKr);
+          return (
+            <div key={`m-${item.coin}-${idx}`} className={`rounded-xl border p-4 ${favorites.has(item.coin) ? "bg-amber-950/10 border-amber-800/30" : isHotOpportunity ? "bg-emerald-950/10 border-emerald-800/30" : "bg-zinc-900/40 border-zinc-800"}`}>
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => toggleFavorite(item.coin)} className={`text-base ${favorites.has(item.coin) ? "text-amber-400" : "text-zinc-700"}`}>{favorites.has(item.coin) ? "★" : "☆"}</button>
+                    <Link href={`/kimchi/${encodeURIComponent(item.coin)}`} className="font-semibold">{item.coin}</Link>
+                    {displayName !== item.coin && <span className="text-xs text-zinc-500 truncate">{displayName}</span>}
+                  </div>
+                  <div className="flex items-center gap-2 mt-1 flex-wrap">
+                    <span className={`px-2 py-0.5 rounded-full text-[11px] font-mono ${positive ? "bg-red-500/20 text-red-300" : "bg-sky-500/20 text-sky-300"}`}>{positive ? "+" : ""}{item.premiumPct.toFixed(2)}%</span>
+                    <span className={`px-2 py-0.5 rounded-full text-[11px] border ${riskColor(r.grade)}`}>{r.grade} {r.total}</span>
+                    {isHotOpportunity && <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[11px]">{lang === "ko" ? "★ 기회" : "★ Hot"}</span>}
+                  </div>
+                </div>
+                <Link href={`/kimchi/${encodeURIComponent(item.coin)}`} className="text-xs text-emerald-400">→</Link>
+              </div>
+              <div className="grid grid-cols-2 gap-3 mt-3 text-xs">
+                <div>
+                  <p className="text-zinc-500">Upbit (KRW)</p>
+                  <p className="font-mono font-medium">{formatKrw(item.upbitKrw)}</p>
+                  <p className="font-mono text-zinc-500 text-[11px]">${formatGlobalPrice(upbitUsd)}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-zinc-500">Global (USD)</p>
+                  <p className="font-mono font-medium">${formatGlobalPrice(item.globalUsd)}</p>
+                  <p className="font-mono text-zinc-500 text-[11px]">{formatKrw(item.globalUsd * fxRate)}</p>
+                </div>
+                <div>
+                  <p className="text-zinc-500">{t("kimchi.header.volume")}</p>
+                  <p className="font-mono">{item.volumeKrw ? (lang === "ko" ? (item.volumeKrw >= 1e9 ? `${(item.volumeKrw/1e9).toFixed(1)}B` : `${(item.volumeKrw/1e8).toFixed(1)}억`) : (item.volumeKrw >= 1e9 ? `${(item.volumeKrw/1e9).toFixed(1)}B` : `${(item.volumeKrw/1e6).toFixed(0)}M`)) : "-"}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-zinc-500">{t("kimchi.header.wallet")}</p>
+                  {(() => {
+                    const w = walletMap.get(item.coin);
+                    const label = !w ? "-" : w.wallet_state === "working" && w.block_state === "normal" && !w.message ? t("kimchi.wallet.normal") : w.wallet_state === "withdraw_only" ? t("kimchi.wallet.withdrawOnly") : w.wallet_state;
+                    const color = !w ? "text-zinc-600" : w.wallet_state === "working" && w.block_state === "normal" && !w.message ? "text-emerald-400" : "text-amber-400";
+                    return <span className={`text-xs ${color}`}>{label}</span>;
+                  })()}
+                </div>
+              </div>
+              <div className="mt-3 pt-3 border-t border-zinc-800 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Sparkline data={(history[item.coin] ?? []).map(p => p.premium)} zScore={computeZScore(history[item.coin])} />
+                  {trip && <span className={`text-xs font-mono ${trip.netProfitKrw >= 0 ? "text-emerald-400" : "text-red-400"}`}>{trip.netProfitKrw >= 0 ? "+" : ""}{displayCurrency === "USD" ? `$${(Math.abs(trip.netProfitKrw)/(fxRate||1350)).toFixed(0)}` : `${Math.round(trip.netProfitKrw).toLocaleString()} KRW`}</span>}
+                </div>
+                <Link href={`/kimchi/${encodeURIComponent(item.coin)}`} className="text-xs text-zinc-500 border border-zinc-700 rounded-full px-3 py-1">{lang === "ko" ? "상세" : "Detail"} →</Link>
+              </div>
+            </div>
+          );
+        })}
+        {filtered.length === 0 && !loading && <p className="text-center text-zinc-500 py-8 text-sm">{t("kimchi.noMatch")}</p>}
+        {loading && items.length === 0 && <p className="text-center text-zinc-500 py-8 text-sm animate-pulse">{t("kimchi.loadingPairs")}</p>}
       </div>
     </>
   );
