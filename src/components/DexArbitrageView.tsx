@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { simulateTiming } from "@/lib/timing-simulator";
 import { usePollingInterval } from "@/lib/use-polling";
+import { useRouter } from "next/navigation";
+import { simulateTiming } from "@/lib/timing-simulator";
 import { scoreDexArb, riskColor, riskBarColor } from "@/lib/risk-scorer";
 import { useLang } from "@/lib/i18n";
 import { useDisplayCurrency } from "@/lib/use-currency";
@@ -357,6 +358,7 @@ function OpportunityCard({ opp, fmtUsd, fmtPct, fmtPrice, fxRate, walletMap, inv
 }) {
   const { t, lang } = useLang();
   const displayCurrency = useDisplayCurrency();
+  const router = useRouter();
   const isDexToUpbit = opp.direction === "dexToUpbit";
 
   // Compute expected execution time for this opportunity (also validates the coin-chain combo)
@@ -410,10 +412,20 @@ function OpportunityCard({ opp, fmtUsd, fmtPct, fmtPrice, fxRate, walletMap, inv
     ? opp.costBreakdown.netProfitKrw + opp.costBreakdown.withdrawalFeeKrw + opp.costBreakdown.gasCostKrw + (opp.isCrossChain ? opp.costBreakdown.onchainFeeKrw * 0.08 : 0)
     : null;
   const detailHref = `/opportunity/${encodeURIComponent(`${opp.pair}|${opp.buyChain}|${opp.sellChain}`)}`;
+  const handleCardClick = () => router.push(detailHref);
+  const handleCardKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      router.push(detailHref);
+    }
+  };
   return (
     <div
-      onClick={() => { window.location.href = detailHref; }}
-      className={`rounded-xl border p-5 cursor-pointer select-none transition-all ${opp.isCrossChain ? "border-violet-800/60 bg-gradient-to-r from-violet-950/20 to-zinc-900/80 hover:border-violet-600" : "border-emerald-900/50 bg-gradient-to-r from-emerald-950/30 to-zinc-900/80 hover:border-emerald-700"}`}
+      role="button"
+      tabIndex={0}
+      onClick={handleCardClick}
+      onKeyDown={handleCardKeyDown}
+      className={`rounded-xl border p-5 cursor-pointer select-none transition-all outline-none focus:ring-2 focus:ring-emerald-500/50 ${opp.isCrossChain ? "border-violet-800/60 bg-gradient-to-r from-violet-950/20 to-zinc-900/80 hover:border-violet-600" : "border-emerald-900/50 bg-gradient-to-r from-emerald-950/30 to-zinc-900/80 hover:border-emerald-700"}`}
     >
       <div className="flex items-start justify-between mb-3 flex-wrap gap-2">
         <div className="flex items-center gap-2 flex-wrap">

@@ -53,9 +53,60 @@ function OpportunityDetailInner({ params }: { params: Promise<{ id: string }> })
   }, [pair, lang]);
 
   useEffect(() => {
-    fetch("/api/scan").then(r => r.json()).then((data: ScanResult) => {
-      const found = data.opportunities.find(o => o.pair === pair && o.buyChain === buyChain && o.sellChain === sellChain);
-      setOpp(found ?? null);
+    Promise.all([
+      fetch("/api/scan").then(r => r.json()).catch(() => null),
+      fetch("/api/recent-arbs?hours=168").then(r => r.json()).catch(() => null),
+    ]).then(([scanData, recentData]) => {
+      const scanOpps: ArbitrageOpportunity[] = scanData?.opportunities ?? [];
+      let found = scanOpps.find(o => o.pair === pair && o.buyChain === buyChain && o.sellChain === sellChain) ?? null;
+      if (!found && recentData?.entries) {
+        const rec = (recentData.entries as { pair: string; buyChain: string; sellChain: string; netSpreadPct: number; estimatedProfitUsd: number }[]).find(
+          e => e.pair === pair && e.buyChain === buyChain && e.sellChain === sellChain,
+        );
+        if (rec) {
+          // reconstruct minimal opportunity from recent entry so detail page still renders
+          found = {
+            pair: rec.pair,
+            buyCoin: rec.pair.split("/")[0].replace(/^W/, ""),
+            upbitMarket: `KRW-${rec.pair.split("/")[0].replace(/^W/, "")}`,
+            buyChain,
+            sellChain,
+            buyDex: (rec as unknown as { buyDex?: string }).buyDex ?? "Unknown",
+            sellDex: (rec as unknown as { sellDex?: string }).sellDex ?? "Unknown",
+            buyPrice: 0,
+            sellPrice: 0,
+            spreadPct: rec.netSpreadPct,
+            netSpreadPct: rec.netSpreadPct,
+            liquidityUsd: 100,
+            estimatedProfitUsd: rec.estimatedProfitUsd,
+            isCrossChain: buyChain !== sellChain,
+            bridgeFeePct: 0.05,
+            detectedAt: new Date().toISOString(),
+          } as ArbitrageOpportunity;
+        }
+      }
+      if (!found) {
+        // fallback: still render a skeleton so user sees the pair even if scan no longer contains it
+        found = {
+          pair,
+          buyCoin: pair.split("/")[0].replace(/^W/, ""),
+          upbitMarket: `KRW-${pair.split("/")[0].replace(/^W/, "")}`,
+          buyChain,
+          sellChain,
+          buyDex: "Unknown",
+          sellDex: "Unknown",
+          buyPrice: 0,
+          sellPrice: 0,
+          spreadPct: 0,
+          netSpreadPct: 0,
+          liquidityUsd: 0,
+          estimatedProfitUsd: 0,
+          isCrossChain: buyChain !== sellChain,
+          bridgeFeePct: 0.05,
+          detectedAt: new Date().toISOString(),
+        } as ArbitrageOpportunity;
+      }
+      setOpp(found);
       setLoading(false);
     }).catch(() => setLoading(false));
     refreshLivePrices();
