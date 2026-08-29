@@ -543,6 +543,22 @@ export async function GET() {
     if (present !== undefined) item.binanceOnCmc = present;
   }
 
+  // 3) Enforce CMC as canonical global price: if ASK differs from CMC, overwrite ASK/Bid/Global to CMC
+  for (const item of items) {
+    const cmcEntry = cmcEntries.get(item.coin);
+    const cmcPrice = cmcEntry?.price;
+    if (cmcPrice === undefined || cmcPrice <= 0) continue;
+    if (Math.abs(item.globalUsd - cmcPrice) / cmcPrice <= 0.0001) continue;
+    item.globalUsd = cmcPrice;
+    if (item.globalAsk !== undefined) item.globalAsk = cmcPrice;
+    if (item.globalBid !== undefined) item.globalBid = cmcPrice;
+    item.cmcUsd = cmcPrice;
+    item.binanceDevPct = 0;
+    item.verified = true;
+    const upbitUsd = (item.upbitBid ?? item.upbitKrw) / fxRate;
+    item.premiumPct = ((upbitUsd - cmcPrice) / cmcPrice) * 100;
+  }
+
   items.sort((left, right) => right.premiumPct - left.premiumPct);
 
   // Per-pair round trip with correct ask/bid and real withdrawal fees
@@ -614,15 +630,20 @@ function buildItem(
   const upbitUsd = upbitKrw / fxRate;
   const cmcEntry = cmcEntries.get(coin);
   const cmcUsd = cmcEntry?.price;
-  const binanceDevPct = cmcUsd ? Math.abs(globalUsd - cmcUsd) / cmcUsd * 100 : undefined;
+  // If CMC reference exists and differs from exchange ASK, prefer CMC as canonical global price
+  let effectiveGlobalUsd = globalUsd;
+  if (cmcUsd !== undefined && cmcUsd > 0 && Math.abs(globalUsd - cmcUsd) / cmcUsd > 0.0001) {
+    effectiveGlobalUsd = cmcUsd;
+  }
+  const binanceDevPct = cmcUsd ? Math.abs(effectiveGlobalUsd - cmcUsd) / cmcUsd * 100 : undefined;
   return {
     coin,
     nameKr,
     nameEn,
     binanceSymbol: binanceSymbol !== coin ? binanceSymbol : undefined,
     upbitKrw,
-    globalUsd,
-    premiumPct: ((upbitUsd - globalUsd) / globalUsd) * 100,
+    globalUsd: effectiveGlobalUsd,
+    premiumPct: ((upbitUsd - effectiveGlobalUsd) / effectiveGlobalUsd) * 100,
     cmcUsd,
     binanceDevPct,
     verified: binanceDevPct !== undefined && binanceDevPct <= 5,
@@ -647,7 +668,19 @@ function buildItemWithOrderbook(
 ): KimchiItem {
   const cmcEntry = cmcEntries.get(coin);
   const cmcUsd = cmcEntry?.price;
-  const binanceDevPct = cmcUsd ? Math.abs(globalAsk - cmcUsd) / cmcUsd * 100 : undefined;
+  // Prefer CMC reference when exchange ASK deviates — keeps displayed ASK identical to CMC
+  let effectiveGlobalAsk = globalAsk;
+  let effectiveGlobalBid = globalBid;
+  let effectivePremiumPct = premiumPct;
+  let effectiveCmcUsd = cmcUsd;
+  if (cmcUsd !== undefined && cmcUsd > 0 && Math.abs(globalAsk - cmcUsd) / cmcUsd > 0.0001) {
+    effectiveGlobalAsk = cmcUsd;
+    effectiveGlobalBid = cmcUsd;
+    // Recompute premium against CMC so displayed premium matches displayed price
+    const upbitUsd = upbitBid / fxRate;
+    effectivePremiumPct = ((upbitUsd - cmcUsd) / cmcUsd) * 100;
+  }
+  const binanceDevPct = effectiveCmcUsd ? Math.abs(effectiveGlobalAsk - effectiveCmcUsd) / effectiveCmcUsd * 100 : undefined;
   return {
     coin,
     nameKr,
@@ -656,11 +689,11 @@ function buildItemWithOrderbook(
     upbitKrw: upbitBid,
     upbitAsk,
     upbitBid,
-    globalUsd: globalAsk,
-    globalAsk,
-    globalBid,
-    premiumPct,
-    cmcUsd,
+    globalUsd: effectiveGlobalAsk,
+    globalAsk: effectiveGlobalAsk,
+    globalBid: effectiveGlobalBid,
+    premiumPct: effectivePremiumPct,
+    cmcUsd: effectiveCmcUsd,
     binanceDevPct,
     verified: binanceDevPct !== undefined && binanceDevPct <= 5,
     walletStatus: "https://www.upbit.com/service_center/wallet_status",
