@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { usePollingInterval } from "@/lib/use-polling";
 import { scoreKimchi, riskColor } from "@/lib/risk-scorer";
 import { useLang } from "@/lib/i18n";
@@ -422,10 +423,12 @@ export default function KimchiView() {
                     >
                       {favorites.has(item.coin) ? "★" : "☆"}
                     </button>
-                    <span className="font-semibold">{item.coin}</span>
+                    <Link href={`/kimchi/${encodeURIComponent(item.coin)}`} className="font-semibold hover:text-emerald-400 hover:underline">
+                      {item.coin}
+                    </Link>
                     {(() => {
                       const displayName = lang === "ko" ? item.nameKr : (item.nameEn || item.nameKr);
-                      return displayName !== item.coin ? <span className="ml-2 text-xs text-zinc-500">{displayName}</span> : null;
+                      return displayName !== item.coin ? <Link href={`/kimchi/${encodeURIComponent(item.coin)}`} className="ml-2 text-xs text-zinc-500 hover:text-emerald-400 hover:underline">{displayName}</Link> : null;
                     })()}
                     {item.binanceSymbol && (
                       <p className="text-[10px] text-cyan-400/80 font-mono mt-0.5" title="Binance uses a different ticker for this coin (resolved via CoinMarketCap)">
