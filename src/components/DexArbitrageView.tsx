@@ -320,7 +320,8 @@ export default function DexArbitrageView() {
               <div className="rounded-xl border border-zinc-800 p-6 text-center text-sm text-zinc-500">{t("dexArb.recent.none")}</div>
             ) : (
               recent.slice(0, 30).map(entry => {
-                const href = `/opportunity/${encodeURIComponent(`${entry.pair}|${entry.buyChain}|${entry.sellChain}`)}`;
+                const safePair = entry.pair.replace("/", "-");
+                const href = `/opportunity/${encodeURIComponent(`${safePair}|${entry.buyChain}|${entry.sellChain}`)}`;
                 const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString(lang === "ko" ? "ko-KR" : "en-US", { hour: "2-digit", minute: "2-digit" });
                 return (
                   <a key={entry.key} href={href} className="flex items-center justify-between rounded-lg border border-zinc-800 bg-zinc-900/40 px-4 py-2.5 hover:border-emerald-700/50 transition-colors">
@@ -410,7 +411,8 @@ function OpportunityCard({ opp, fmtUsd, fmtPct, fmtPrice, fxRate, walletMap, inv
   const inventoryNetKrw = opp.costBreakdown && inventoryMode
     ? opp.costBreakdown.netProfitKrw + opp.costBreakdown.withdrawalFeeKrw + opp.costBreakdown.gasCostKrw + (opp.isCrossChain ? opp.costBreakdown.onchainFeeKrw * 0.08 : 0)
     : null;
-  const detailHref = `/opportunity/${encodeURIComponent(`${opp.pair}|${opp.buyChain}|${opp.sellChain}`)}`;
+  const safePair = opp.pair.replace("/", "-");
+  const detailHref = `/opportunity/${encodeURIComponent(`${safePair}|${opp.buyChain}|${opp.sellChain}`)}`;
   return (
     <Link
       href={detailHref}

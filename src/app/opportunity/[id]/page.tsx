@@ -21,7 +21,8 @@ function OpportunityDetailInner({ params }: { params: Promise<{ id: string }> })
   const displayCurrency = useDisplayCurrency();
   const resolvedParams = use(params);
   const decoded = decodeURIComponent(resolvedParams.id);
-  const [pair, buyChain, sellChain] = decoded.split("|");
+  const [rawPair, buyChain, sellChain] = decoded.split("|");
+  const pair = rawPair.includes("/") ? rawPair : rawPair.replace("-", "/");
   const [opp, setOpp] = useState<ArbitrageOpportunity | null>(null);
   const [loading, setLoading] = useState(true);
   const [liveUsdtKrw, setLiveUsdtKrw] = useState<number | null>(null);
