@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, use } from "react";
+import { useState, useEffect, use, useCallback } from "react";
 import ExecutionPanel from "./ExecutionPanel";
 import { CHAIN_DEXES, type ChainId } from "@/lib/dex-config";
 import { scoreDexArb, riskColor, riskBarColor } from "@/lib/risk-scorer";
@@ -24,6 +24,33 @@ function OpportunityDetailInner({ params }: { params: Promise<{ id: string }> })
   const [pair, buyChain, sellChain] = decoded.split("|");
   const [opp, setOpp] = useState<ArbitrageOpportunity | null>(null);
   const [loading, setLoading] = useState(true);
+  const [liveUsdtKrw, setLiveUsdtKrw] = useState<number | null>(null);
+  const [liveUpbitKrw, setLiveUpbitKrw] = useState<number | null>(null);
+  const [liveBinanceUsd, setLiveBinanceUsd] = useState<number | null>(null);
+  const [liveFx, setLiveFx] = useState<number | null>(null);
+  const [liveFetchedAt, setLiveFetchedAt] = useState<string | null>(null);
+
+  const refreshLivePrices = useCallback(async () => {
+    const coin = pair.split("/")[0].replace("W", "");
+    const upbitSymbolMap: Record<string, string> = { WETH: "ETH", WBTC: "BTC", WBNB: "BNB" };
+    const upbitCoin = upbitSymbolMap[coin] ?? coin;
+    try {
+      const [usdtOrderbook, coinOrderbook, binanceBook, fxRes] = await Promise.all([
+        fetch(`https://api.upbit.com/v1/orderbook?markets=KRW-USDT`).then(r => r.ok ? r.json() : null).catch(() => null),
+        fetch(`https://api.upbit.com/v1/orderbook?markets=KRW-${upbitCoin}`).then(r => r.ok ? r.json() : null).catch(() => null),
+        fetch(`https://api.binance.com/api/v3/ticker/bookTicker?symbol=${coin}USDT`).then(r => r.ok ? r.json() : null).catch(() => null),
+        fetch(`https://open.er-api.com/v6/latest/USD`).then(r => r.ok ? r.json() : null).catch(() => null),
+      ]);
+      if (usdtOrderbook?.[0]?.orderbook_units?.[0]?.ask_price) setLiveUsdtKrw(usdtOrderbook[0].orderbook_units[0].ask_price);
+      if (coinOrderbook?.[0]?.orderbook_units?.[0]) {
+        setLiveUpbitKrw(coinOrderbook[0].orderbook_units[0].bid_price ?? coinOrderbook[0].orderbook_units[0].ask_price);
+      }
+      if (binanceBook?.askPrice) setLiveBinanceUsd(Number(binanceBook.askPrice));
+      else if (binanceBook?.bidPrice) setLiveBinanceUsd(Number(binanceBook.bidPrice));
+      if (fxRes?.rates?.KRW) setLiveFx(fxRes.rates.KRW);
+      setLiveFetchedAt(new Date().toLocaleTimeString(lang === "ko" ? "ko-KR" : "en-US"));
+    } catch {}
+  }, [pair, lang]);
 
   useEffect(() => {
     fetch("/api/scan").then(r => r.json()).then((data: ScanResult) => {
@@ -31,7 +58,8 @@ function OpportunityDetailInner({ params }: { params: Promise<{ id: string }> })
       setOpp(found ?? null);
       setLoading(false);
     }).catch(() => setLoading(false));
-  }, [pair, buyChain, sellChain]);
+    refreshLivePrices();
+  }, [pair, buyChain, sellChain, refreshLivePrices]);
 
   const fmtUsd = (n: number) => "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const fmtPrice = (n: number) => n >= 1000 ? n.toLocaleString("en-US", { maximumFractionDigits: 2 }) : n.toFixed(6);
@@ -159,6 +187,63 @@ function OpportunityDetailInner({ params }: { params: Promise<{ id: string }> })
                       {opp.costBreakdown.netProfitKrw >= 0 ? "+" : ""}{displayCurrency === "USD" ? `$${(Math.abs(opp.costBreakdown.netProfitKrw) / 1350).toFixed(2)}` : `${Math.round(opp.costBreakdown.netProfitKrw).toLocaleString()} KRW`} ({opp.costBreakdown.roiPct.toFixed(2)}%)
                     </p>
                   </div>
+                </div>
+                <div className="rounded-lg bg-zinc-900/50 border border-zinc-800 p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs font-medium text-zinc-400">{lang === "ko" ? "실시간 계산 기준" : "Live Calculation Basis"}</p>
+                    <div className="flex items-center gap-2">
+                      {liveFetchedAt && <span className="text-[10px] text-zinc-500">{liveFetchedAt}</span>}
+                      <button onClick={refreshLivePrices} className="px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-[10px] text-zinc-300">{lang === "ko" ? "새로고침" : "Refresh"}</button>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                    <div className="rounded bg-zinc-950 p-2 text-center">
+                      <p className="text-zinc-500 mb-1">USDT/KRW Ask</p>
+                      <p className="font-mono font-bold">{liveUsdtKrw ? `${liveUsdtKrw.toLocaleString()} KRW` : "—"}</p>
+                      <p className="text-[10px] text-zinc-600">{lang === "ko" ? "업비트 테더" : "Upbit Tether"}</p>
+                    </div>
+                    <div className="rounded bg-zinc-950 p-2 text-center">
+                      <p className="text-zinc-500 mb-1">{opp.buyCoin} / KRW</p>
+                      <p className="font-mono font-bold">{liveUpbitKrw ? `${liveUpbitKrw.toLocaleString()} KRW` : "—"}</p>
+                      <p className="text-[10px] text-zinc-600">{lang === "ko" ? "업비트 Bid" : "Upbit Bid"}</p>
+                    </div>
+                    <div className="rounded bg-zinc-950 p-2 text-center">
+                      <p className="text-zinc-500 mb-1">{opp.buyCoin} / USD</p>
+                      <p className="font-mono font-bold">{liveBinanceUsd ? `$${liveBinanceUsd.toFixed(4)}` : "—"}</p>
+                      <p className="text-[10px] text-zinc-600">Binance Ask</p>
+                    </div>
+                    <div className="rounded bg-zinc-950 p-2 text-center">
+                      <p className="text-zinc-500 mb-1">FX USD/KRW</p>
+                      <p className="font-mono font-bold">{liveFx ? liveFx.toFixed(2) : "—"}</p>
+                      <p className="text-[10px] text-zinc-600">{lang === "ko" ? "실시간 환율" : "Live FX"}</p>
+                    </div>
+                  </div>
+                  {liveUsdtKrw && liveUpbitKrw && liveBinanceUsd && liveFx && (
+                    <div className="rounded-lg bg-zinc-950 border border-zinc-800 p-3">
+                      <div className="flex justify-between text-xs">
+                        <span className="text-zinc-500">{lang === "ko" ? "실시간 프리미엄" : "Live premium"}</span>
+                        <span className={`font-mono font-bold ${((liveUpbitKrw / liveFx - liveBinanceUsd) / liveBinanceUsd) * 100 >= 0 ? "text-red-400" : "text-sky-400"}`}>
+                          {(((liveUpbitKrw / liveFx - liveBinanceUsd) / liveBinanceUsd) * 100).toFixed(2)}%
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-xs mt-1">
+                        <span className="text-zinc-500">{lang === "ko" ? "실시간 총수익(수수료 전, 1M 기준)" : "Live gross (1M, ex-fees)"}</span>
+                        <span className="font-mono text-zinc-300">
+                          {Math.round(1000000 * ((liveUpbitKrw / liveFx - liveBinanceUsd) / liveBinanceUsd)).toLocaleString()} KRW
+                          <span className="text-zinc-600 ml-1">
+                            ({displayCurrency === "USD"
+                              ? `$${(Math.round(1000000 * ((liveUpbitKrw / liveFx - liveBinanceUsd) / liveBinanceUsd)) / (liveFx || 1350)).toFixed(2)}`
+                              : `$${((liveUpbitKrw / liveFx - liveBinanceUsd) / liveBinanceUsd * 1000).toFixed(2)}`})
+                          </span>
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                  <p className="text-[11px] text-zinc-600 mt-2">
+                    {lang === "ko"
+                      ? "클릭 시점의 실시간 호가로 재계산됩니다. 테더 가격은 1,000,000원이 몇 USDT로 바뀌는지 결정합니다."
+                      : "Recalculated with live quotes at click time. Tether price determines how much USDT 1,000,000 KRW converts to."}
+                  </p>
                 </div>
                 <div className="rounded-lg bg-zinc-900/50 border border-zinc-800 p-4">
                   <p className="text-xs font-medium text-zinc-400 mb-2">{lang === "ko" ? "단계별 비용 (1,000,000 KRW 투자 시)" : "Step costs (on 1,000,000 KRW)"}</p>
