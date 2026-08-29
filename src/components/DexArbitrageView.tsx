@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { usePollingInterval } from "@/lib/use-polling";
-import { useRouter } from "next/navigation";
 import { simulateTiming } from "@/lib/timing-simulator";
 import { scoreDexArb, riskColor, riskBarColor } from "@/lib/risk-scorer";
 import { useLang } from "@/lib/i18n";
@@ -358,7 +358,6 @@ function OpportunityCard({ opp, fmtUsd, fmtPct, fmtPrice, fxRate, walletMap, inv
 }) {
   const { t, lang } = useLang();
   const displayCurrency = useDisplayCurrency();
-  const router = useRouter();
   const isDexToUpbit = opp.direction === "dexToUpbit";
 
   // Compute expected execution time for this opportunity (also validates the coin-chain combo)
@@ -412,20 +411,10 @@ function OpportunityCard({ opp, fmtUsd, fmtPct, fmtPrice, fxRate, walletMap, inv
     ? opp.costBreakdown.netProfitKrw + opp.costBreakdown.withdrawalFeeKrw + opp.costBreakdown.gasCostKrw + (opp.isCrossChain ? opp.costBreakdown.onchainFeeKrw * 0.08 : 0)
     : null;
   const detailHref = `/opportunity/${encodeURIComponent(`${opp.pair}|${opp.buyChain}|${opp.sellChain}`)}`;
-  const handleCardClick = () => router.push(detailHref);
-  const handleCardKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      router.push(detailHref);
-    }
-  };
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={handleCardClick}
-      onKeyDown={handleCardKeyDown}
-      className={`rounded-xl border p-5 cursor-pointer select-none transition-all outline-none focus:ring-2 focus:ring-emerald-500/50 ${opp.isCrossChain ? "border-violet-800/60 bg-gradient-to-r from-violet-950/20 to-zinc-900/80 hover:border-violet-600" : "border-emerald-900/50 bg-gradient-to-r from-emerald-950/30 to-zinc-900/80 hover:border-emerald-700"}`}
+    <Link
+      href={detailHref}
+      className={`block rounded-xl border p-5 cursor-pointer select-none transition-all ${opp.isCrossChain ? "border-violet-800/60 bg-gradient-to-r from-violet-950/20 to-zinc-900/80 hover:border-violet-600" : "border-emerald-900/50 bg-gradient-to-r from-emerald-950/30 to-zinc-900/80 hover:border-emerald-700"}`}
     >
       <div className="flex items-start justify-between mb-3 flex-wrap gap-2">
         <div className="flex items-center gap-2 flex-wrap">
@@ -561,13 +550,13 @@ function OpportunityCard({ opp, fmtUsd, fmtPct, fmtPrice, fxRate, walletMap, inv
           <p className="text-xs text-zinc-500 mb-0.5 flex items-center gap-1">Buy on {(() => {
             const wallet = walletMap.get(opp.buyCoin);
             const href = "https://www.upbit.com/service_center/wallet_status";
-            if (!wallet) return <a href={href} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="inline-flex items-center gap-0.5 text-[10px] text-zinc-500 hover:text-emerald-400" title={lang === "ko" ? "지갑 상태 정보 없음 — 공식 페이지에서 확인" : "No wallet status — check official page"}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 12V8H6a2 2 0 0 1-2-2c0-1.1.9-2 2-2h12v4"/><path d="M20 12a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2"/><path d="M20 12a2 2 0 0 0 2 2v2a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2c0-1.1.9-2 2-2h12z"/></svg>{t("kimchi.header.wallet")}</a>;
+            if (!wallet) return <span role="button" tabIndex={0} onClick={e => { e.preventDefault(); e.stopPropagation(); window.open(href, "_blank"); }} onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); (e.target as HTMLElement).click(); } }} className="inline-flex items-center gap-0.5 text-[10px] text-zinc-500 hover:text-emerald-400 cursor-pointer" title={lang === "ko" ? "지갑 상태 정보 없음 — 공식 페이지에서 확인" : "No wallet status — check official page"}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 12V8H6a2 2 0 0 1-2-2c0-1.1.9-2 2-2h12v4"/><path d="M20 12a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2"/><path d="M20 12a2 2 0 0 0 2 2v2a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2c0-1.1.9-2 2-2h12z"/></svg>{t("kimchi.header.wallet")}</span>;
             const isWorking = wallet.wallet_state === "working" && wallet.block_state === "normal" && !wallet.message;
             const isWithdrawOnly = wallet.wallet_state === "withdraw_only";
             const label = isWorking ? t("kimchi.wallet.normal") : isWithdrawOnly ? t("kimchi.wallet.withdrawOnly") : wallet.wallet_state;
             const color = isWorking ? "text-emerald-400" : isWithdrawOnly ? "text-amber-400" : "text-red-400";
             const title = wallet.message ? `${label}: ${wallet.message}` : isWorking ? t("kimchi.wallet.tooltipNormal") : `${label} — ${lang === "ko" ? "클릭하면 공식 현황 페이지" : "click for official status"}`;
-            return <a href={href} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className={`inline-flex items-center gap-0.5 text-[10px] ${color} hover:opacity-80`} title={title}>{isWorking ? "●" : isWithdrawOnly ? "◐" : "●"} {label}</a>;
+            return <span role="button" tabIndex={0} onClick={e => { e.preventDefault(); e.stopPropagation(); window.open(href, "_blank"); }} onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); (e.target as HTMLElement).click(); } }} className={`inline-flex items-center gap-0.5 text-[10px] ${color} hover:opacity-80 cursor-pointer`} title={title}>{isWorking ? "●" : isWithdrawOnly ? "◐" : "●"} {label}</span>;
           })()}</p>
           <p className="font-medium">{CHAIN_NAMES[opp.buyChain] ?? opp.buyChain} &middot; {opp.buyDex}</p>
           <p className="text-xs text-zinc-600">@ {fmtPrice(opp.buyPrice)}{isDexToUpbit ? " USD" : ""}</p>
@@ -621,14 +610,10 @@ function OpportunityCard({ opp, fmtUsd, fmtPct, fmtPrice, fxRate, walletMap, inv
         </div>
       )}
       <div className="mt-3 pt-3 border-t border-zinc-800/60 flex justify-end">
-        <a
-          href={detailHref}
-          onClick={e => e.stopPropagation()}
-          className="text-xs text-emerald-400 hover:text-emerald-300 hover:underline"
-        >
+        <span className="text-xs text-emerald-400">
           {lang === "ko" ? "상세 시나리오 보기 →" : "View detailed scenario →"}
-        </a>
+        </span>
       </div>
-    </div>
+    </Link>
   );
 }
