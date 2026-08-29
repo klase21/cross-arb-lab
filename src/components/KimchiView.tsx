@@ -44,7 +44,7 @@ function formatKrw(value: number) {
   return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 5 });
 }
 
-type SortKey = "premium" | "roundTrip" | "cmcDev" | "coin" | "risk";
+type SortKey = "premium" | "roundTrip" | "cmcDev" | "coin" | "risk" | "opportunity";
 type SortDir = "desc" | "asc";
 
 function Sparkline({ data, zScore }: { data: number[]; zScore?: number }) {
@@ -101,7 +101,7 @@ export default function KimchiView() {
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [walletMap, setWalletMap] = useState<Map<string, { wallet_state: string; block_state: string; message: string }>>(new Map());
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
-  const [sortKey, setSortKey] = useState<SortKey>("premium");
+  const [sortKey, setSortKey] = useState<SortKey>("opportunity");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [minVolume, setMinVolume] = useState(0);
   const [history, setHistory] = useState<Record<string, { time: number; premium: number }[]>>({});
@@ -231,6 +231,25 @@ export default function KimchiView() {
     });
   };
 
+  const getDelta = (item: KimchiItem): number | undefined => {
+    const d = topMovers.find(m => m.coin === item.coin)?.delta;
+    if (d !== undefined) return d;
+    const hist = history[item.coin];
+    if (hist && hist.length >= 2) return hist[hist.length - 1].premium - hist[0].premium;
+    return undefined;
+  };
+
+  const getOpportunityScore = (item: KimchiItem): number => {
+    const profit = item.trip?.netProfitPct ?? -100;
+    const delta = getDelta(item) ?? -10;
+    // profitable + upward momentum gets huge boost: profit >0 and delta>0 => profit*2 + delta*3
+    // profitable but flat/down => profit
+    // unprofitable => -100 + delta (still low)
+    if (profit > 0 && delta > 0) return profit * 2 + delta * 5;
+    if (profit > 0) return profit;
+    return -100 + delta;
+  };
+
   const exportCsv = () => {
     const headers = ["Coin", "Name", "Upbit_KRW_Bid", "Global_USD_Ask", "Premium_Pct", "CMC_Dev_Pct", "Volume_KRW_24h", "RoundTrip_KRW", "RoundTrip_Pct", "Risk_Total", "Risk_Grade"];
     const rows = filtered.map(item => {
@@ -266,6 +285,7 @@ export default function KimchiView() {
         case "roundTrip": return item.trip?.netProfitPct ?? -Infinity;
         case "cmcDev": return item.binanceDevPct ?? Infinity;
         case "risk": return getKimchiRisk(item).total;
+        case "opportunity": return getOpportunityScore(item);
         case "coin": return 0;
       }
     };
@@ -379,7 +399,7 @@ export default function KimchiView() {
       </div>
 
       <div className="rounded-xl border border-zinc-800 overflow-x-auto">
-        <table className="w-full text-sm min-w-[1180px]">
+        <table className="w-full text-sm min-w-[1280px]">
           <thead>
             <tr className="bg-zinc-900/80 text-zinc-500 text-xs">
               <th className="text-left font-medium px-4 py-2.5">{t("kimchi.header.coin")}</th>
@@ -410,6 +430,13 @@ export default function KimchiView() {
               >
                 {t("kimchi.header.risk")} {sortKey === "risk" && <span className="text-emerald-400">{sortDir === "desc" ? "▼" : "▲"}</span>}
               </th>
+              <th
+                className="text-center font-medium px-3 py-2.5 cursor-pointer hover:text-zinc-300 select-none"
+                title={lang === "ko" ? "라운드트립 플러스 + 상승 모멘텀 — 클릭하여 정렬" : "Round-trip profit + upward momentum — click to sort"}
+                onClick={() => toggleSort("opportunity")}
+              >
+                {lang === "ko" ? "기회도" : "Score"} {sortKey === "opportunity" && <span className="text-emerald-400">{sortDir === "desc" ? "▼" : "▲"}</span>}
+              </th>
               <th className="text-center font-medium px-2 py-2.5" title={lang === "ko" ? "업비트 입출금 현황 - 클릭하면 공식 페이지로 이동" : "Upbit wallet status — click for official page"}>{t("kimchi.header.wallet")}</th>
               <th
                 className="text-right font-medium px-4 py-2.5 pr-5 cursor-pointer hover:text-zinc-300 select-none"
@@ -427,8 +454,10 @@ export default function KimchiView() {
               const upbitUsd = item.upbitKrw / fxRate;
               const globalKrw = item.globalUsd * fxRate;
               const trip = item.trip;
+              const delta = getDelta(item);
+              const isHotOpportunity = (trip?.netProfitPct ?? -100) > 0 && (delta ?? -10) > 0;
               return (
-                <tr key={`${item.coin}-${item.binanceSymbol ?? ''}-${idx}`} className={`border-t border-zinc-800/70 hover:bg-zinc-900/60 transition-colors ${favorites.has(item.coin) ? "bg-amber-950/10" : ""}`}>
+                <tr key={`${item.coin}-${item.binanceSymbol ?? ''}-${idx}`} className={`border-t border-zinc-800/70 hover:bg-zinc-900/60 transition-colors ${favorites.has(item.coin) ? "bg-amber-950/10" : isHotOpportunity ? "bg-emerald-950/10" : ""}`}>
                   <td className="px-4 py-2.5">
                     <button
                       onClick={() => toggleFavorite(item.coin)}
@@ -499,6 +528,21 @@ export default function KimchiView() {
                       );
                     })()}
                   </td>
+                  <td className="text-center px-3 py-2.5">
+                    {(() => {
+                      const delta = getDelta(item);
+                      const profit = item.trip?.netProfitPct ?? -100;
+                      const isOpportunity = profit > 0 && (delta ?? -10) > 0;
+                      return (
+                        <span
+                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium border ${isOpportunity ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/30" : "bg-zinc-800 text-zinc-500 border-zinc-700"}`}
+                          title={`${lang === "ko" ? "수익" : "Profit"} ${profit > -100 ? profit.toFixed(2) + "%" : "-"} · ${lang === "ko" ? "모멘텀" : "Momentum"} ${delta !== undefined ? (delta >= 0 ? "+" : "") + delta.toFixed(2) + "%p" : "-"}`}
+                        >
+                          {isOpportunity ? (lang === "ko" ? "★ 기회" : "★ Hot") : `${delta !== undefined ? (delta >= 0 ? `+${delta.toFixed(1)}%p` : `${delta.toFixed(1)}%p`) : "-"}`}
+                        </span>
+                      );
+                    })()}
+                  </td>
                   <td className="text-center px-2 py-2.5">
                     {(() => {
                       const wallet = walletMap.get(item.coin);
@@ -546,10 +590,10 @@ export default function KimchiView() {
               );
             })}
             {filtered.length === 0 && !loading && (
-              <tr><td colSpan={12} className="text-center text-zinc-500 py-8">{t("kimchi.noMatch")}</td></tr>
+              <tr><td colSpan={13} className="text-center text-zinc-500 py-8">{t("kimchi.noMatch")}</td></tr>
             )}
             {loading && items.length === 0 && (
-              <tr><td colSpan={12} className="text-center text-zinc-500 py-8 animate-pulse">{t("kimchi.loadingPairs")}</td></tr>
+              <tr><td colSpan={13} className="text-center text-zinc-500 py-8 animate-pulse">{t("kimchi.loadingPairs")}</td></tr>
             )}
           </tbody>
         </table>
