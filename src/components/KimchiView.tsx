@@ -273,6 +273,12 @@ export default function KimchiView() {
         if (verifiedOnly && !item.verified) return false;
         if (reverseOnly && item.premiumPct > -0.5) return false;
         if (minVolume > 0 && (item.volumeKrw ?? 0) < minVolume) return false;
+        // Hide paused / withdraw_only (입출금 제한) — as requested
+        const w = walletMap.get(item.coin);
+        if (w) {
+          if (w.wallet_state === "paused" || w.block_state === "paused") return false;
+          if (w.wallet_state === "withdraw_only") return false;
+        }
         const query = search.trim().toLowerCase();
         if (!query) return true;
         const nameKo = (item.nameKr || "").toLowerCase();
