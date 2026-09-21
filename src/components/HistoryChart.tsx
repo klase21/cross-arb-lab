@@ -70,8 +70,31 @@ export default function HistoryChart({ symbol }: { symbol: string }) {
   const [series, setSeries] = useState<Record<string, Pt[]>>({});
   const [premium, setPremium] = useState<{ t: number; pct: number }[]>([]);
   const [points, setPoints] = useState(0);
+  const [source, setSource] = useState<"db" | "live" | null>(null);
   const [unavailable, setUnavailable] = useState(false);
   const [loading, setLoading] = useState(true);
+
+  const loadLive = useCallback(async (d: number) => {
+    // Klines fallback for coins outside the DB collection universe (top 60).
+    // Served by /api/klines (Upbit blocks browser CORS, so server proxies).
+    try {
+      const res = await fetch(`/api/klines?symbol=${encodeURIComponent(symbol)}&days=${d}`);
+      if (!res.ok) return false;
+      const data = await res.json() as {
+        series?: Record<string, Pt[]>;
+        premium?: { t: number; pct: number }[];
+      };
+      const up = data.series?.upbit ?? [];
+      if (up.length < 2) return false;
+      setSeries(data.series ?? {});
+      setPremium(Array.isArray(data.premium) ? data.premium : []);
+      setPoints(up.length + (data.series?.binance?.length ?? 0));
+      setSource("live");
+      return true;
+    } catch {
+      return false;
+    }
+  }, [symbol]);
 
   const load = useCallback(async (d: number) => {
     try {
@@ -80,14 +103,20 @@ export default function HistoryChart({ symbol }: { symbol: string }) {
       if (res.status === 503) { setUnavailable(true); return; }
       if (res.ok) {
         const data = await res.json();
-        setSeries(data.series ?? {});
-        setPremium(Array.isArray(data.premium) ? data.premium : []);
-        setPoints(data.points ?? 0);
+        const dbPoints = data.points ?? 0;
+        if (dbPoints >= 4) {
+          setSeries(data.series ?? {});
+          setPremium(Array.isArray(data.premium) ? data.premium : []);
+          setPoints(dbPoints);
+          setSource("db");
+          return;
+        }
       }
+      await loadLive(d);
     } catch {} finally {
       setLoading(false);
     }
-  }, [symbol]);
+  }, [symbol, loadLive]);
 
   useEffect(() => {
     const kickoff = setTimeout(() => { void load(days); }, 0);
@@ -102,6 +131,11 @@ export default function HistoryChart({ symbol }: { symbol: string }) {
         <h2 className="text-base font-semibold">
           {t("hist.title")}
           <span className="text-xs font-normal text-zinc-500 ml-2">{points}{lang === "ko" ? "개 수집" : " pts"}</span>
+          {source && (
+            <span className={`ml-1.5 px-1.5 py-px rounded text-[10px] font-bold ${source === "db" ? "bg-emerald-500/15 text-emerald-300" : "bg-sky-500/15 text-sky-300"}`}>
+              {source === "db" ? "DB" : "LIVE"}
+            </span>
+          )}
         </h2>
         <div className="flex items-center gap-1.5">
           {[1, 7, 30].map(d => (
