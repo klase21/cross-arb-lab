@@ -53,6 +53,7 @@ function KimchiDetailInner({ params }: { params: Promise<{ coin: string }> }) {
   const [liveUsdtKrw, setLiveUsdtKrw] = useState<number | null>(null);
   const [liveFetchedAt, setLiveFetchedAt] = useState<string | null>(null);
   const [wallet, setWallet] = useState<{ wallet_state: string; block_state: string; message: string } | null>(null);
+  const [gate, setGate] = useState<{ chains: { name: string; depositOk: boolean; withdrawOk: boolean; delayed: boolean }[] } | null>(null);
 
   const refreshLive = useCallback(async () => {
     try {
@@ -72,13 +73,17 @@ function KimchiDetailInner({ params }: { params: Promise<{ coin: string }> }) {
       fetch("/api/kimchi").then(r => (r.ok ? r.json() : null)).catch(() => null),
       fetch("https://open.er-api.com/v6/latest/USD").then(r => (r.ok ? r.json() : null)).catch(() => null),
       fetch("/api/upbit/wallet-status").then(r => (r.ok ? r.json() : null)).catch(() => null),
-    ]).then(([kimchiData, fxData, walletData]) => {
+      fetch(`/api/gate/wallet-status?currency=${encodeURIComponent(coin)}`).then(r => (r.ok ? r.json() : null)).catch(() => null),
+    ]).then(([kimchiData, fxData, walletData, gateData]) => {
       if (cancelled) return;
       const found = (kimchiData?.items as KimchiItem[] | undefined)?.find(i => i.coin.toUpperCase() === coin) ?? null;
       setItem(found);
       const list = Array.isArray(walletData?.data) ? walletData.data : [];
       const entry = list.find((e: { currency?: string }) => e.currency === coin) ?? null;
       if (entry) setWallet({ wallet_state: entry.wallet_state, block_state: entry.block_state, message: entry.message ?? "" });
+      if (gateData && Array.isArray(gateData.chains) && gateData.chains.length > 0 && !gateData.delisted) {
+        setGate({ chains: gateData.chains.slice(0, 8) });
+      }
       if (fxData?.rates?.KRW) setFxRate(fxData.rates.KRW);
       else if (kimchiData?.fxRate) setFxRate(kimchiData.fxRate);
       setLoading(false);
@@ -261,6 +266,7 @@ function KimchiDetailInner({ params }: { params: Promise<{ coin: string }> }) {
             );
             return (
               <div>
+                <p className="text-[11px] font-semibold text-zinc-400 mb-1.5">Upbit</p>
                 <div className="flex items-center gap-2 flex-wrap">
                   {badge(depositOk, lang === "ko" ? "입금" : "Deposit")}
                   {badge(withdrawOk, lang === "ko" ? "출금" : "Withdraw")}
@@ -271,6 +277,25 @@ function KimchiDetailInner({ params }: { params: Promise<{ coin: string }> }) {
                 {wallet.message && <p className="text-[11px] text-amber-300/90 mt-2">{wallet.message}</p>}
                 {(!depositOk || !withdrawOk) && (
                   <p className="text-[11px] text-zinc-600 mt-1 font-mono">{wallet.wallet_state} / {wallet.block_state}</p>
+                )}
+                {gate && (
+                  <div className="mt-3 pt-3 border-t border-zinc-800">
+                    <p className="text-[11px] font-semibold text-zinc-400 mb-1.5">Gate.io</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {gate.chains.map(c => (
+                        <span key={c.name} className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-zinc-900 border border-zinc-800 text-[11px]">
+                          <span className="font-mono text-zinc-300">{c.name}</span>
+                          <span title={lang === "ko" ? "입금" : "Deposit"} className={c.depositOk ? "text-emerald-400" : "text-red-400"}>
+                            {lang === "ko" ? "입" : "D"}{c.depositOk ? "●" : "○"}
+                          </span>
+                          <span title={lang === "ko" ? "출금" : "Withdraw"} className={c.withdrawOk ? "text-emerald-400" : "text-red-400"}>
+                            {lang === "ko" ? "출" : "W"}{c.withdrawOk ? "●" : "○"}{c.delayed ? "*" : ""}
+                          </span>
+                        </span>
+                      ))}
+                    </div>
+                    <p className="text-[10px] text-zinc-600 mt-1">* {lang === "ko" ? "출금 지연" : "withdraw delayed"}</p>
+                  </div>
                 )}
               </div>
             );
