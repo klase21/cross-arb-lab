@@ -5,6 +5,41 @@ export const dynamic = "force-dynamic";
 const TTL_MS = 60_000;
 let cache: { at: number; data: unknown } | null = null;
 
+const FEE_TTL_MS = 10 * 60_000;
+let feeCache: { at: number; networks: Record<string, { net: string; name: string; fee: number }[]> } | null = null;
+
+async function getNetworks(): Promise<Record<string, { net: string; name: string; fee: number }[]>> {
+  if (feeCache && Date.now() - feeCache.at < FEE_TTL_MS) return feeCache.networks;
+  try {
+    const response = await fetch("https://ccx.upbit.com/api/v1/status/withdraw_fee", {
+      headers: { Accept: "application/json", "User-Agent": "Mozilla/5.0" },
+      signal: AbortSignal.timeout(8_000),
+      next: { revalidate: 300 },
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json() as {
+      withdraw_fee_conditions?: { currency?: string; net_type?: string; network_name?: string; withdraw_fee?: string }[];
+    };
+    const networks: Record<string, { net: string; name: string; fee: number }[]> = {};
+    for (const entry of data.withdraw_fee_conditions ?? []) {
+      if (!entry.currency || !entry.net_type) continue;
+      const list = networks[entry.currency] ?? [];
+      if (!list.some(x => x.net === entry.net_type)) {
+        list.push({
+          net: entry.net_type,
+          name: entry.network_name ?? entry.net_type,
+          fee: Number.parseFloat(entry.withdraw_fee ?? "") || 0,
+        });
+      }
+      networks[entry.currency] = list;
+    }
+    if (Object.keys(networks).length > 0) feeCache = { at: Date.now(), networks };
+    return feeCache?.networks ?? {};
+  } catch {
+    return feeCache?.networks ?? {};
+  }
+}
+
 export async function GET() {
   if (cache && Date.now() - cache.at < TTL_MS) {
     return NextResponse.json(cache.data, { headers: { "Cache-Control": "public, max-age=60" } });
@@ -18,7 +53,8 @@ export async function GET() {
     });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
-    const payload = { data, timestamp: new Date().toISOString() };
+    const networks = await getNetworks();
+    const payload = { data, networks, timestamp: new Date().toISOString() };
     cache = { at: Date.now(), data: payload };
     return NextResponse.json(payload, { headers: { "Cache-Control": "public, max-age=60" } });
   } catch (error) {

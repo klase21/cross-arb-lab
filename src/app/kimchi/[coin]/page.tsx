@@ -42,6 +42,49 @@ function fmtUsd(n: number): string {
   return "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 });
 }
 
+// Canonical network id so Upbit net_type and Gate chain names can be matched
+// (ETH=Ethereum, BSC=BNB Chain, MATIC=Polygon, ...).
+const NET_ALIASES: Record<string, string> = {
+  eth: "eth", ethereum: "eth",
+  btc: "btc", bitcoin: "btc",
+  bsc: "bsc", bnb: "bsc",
+  matic: "matic", polygon: "matic",
+  trx: "trx", tron: "trx",
+  arb: "arb", arbitrum: "arb",
+  op: "op", optimism: "op",
+  avax: "avax", avalanche: "avax", avalanchec: "avax",
+  sol: "sol", solana: "sol",
+  ada: "ada", cardano: "ada",
+  xrp: "xrp", ripple: "xrp",
+  doge: "doge", dogecoin: "doge",
+  ltc: "ltc", litecoin: "ltc",
+  dot: "dot", polkadot: "dot",
+  atom: "atom", cosmos: "atom",
+  kaia: "kaia", klay: "kaia", klaytn: "kaia",
+  apt: "apt", aptos: "apt",
+  sui: "sui", sei: "sei",
+  inj: "inj", injective: "inj",
+  tia: "tia", celestia: "tia",
+  base: "base", blast: "blast",
+  linea: "linea", scroll: "scroll", zksync: "zksync",
+  mnt: "mnt", mantle: "mnt",
+  near: "near", hbar: "hbar", hedera: "hbar",
+  algo: "algo", algorand: "algo",
+  xlm: "xlm", stellar: "xlm",
+  ftm: "ftm", fantom: "ftm",
+  one: "one", harmony: "one",
+  fil: "fil", filecoin: "fil",
+  ar: "ar", arweave: "ar",
+  etc: "etc", bch: "bch",
+  xtz: "xtz", tezos: "xtz",
+  eos: "eos", neo: "neo",
+};
+
+function normNet(raw: string): string {
+  const key = raw.toLowerCase().replace(/[^a-z0-9]/g, "");
+  return NET_ALIASES[key] ?? key;
+}
+
 function KimchiDetailInner({ params }: { params: Promise<{ coin: string }> }) {
   const { t, lang } = useLang();
   const displayCurrency = useDisplayCurrency();
@@ -54,6 +97,7 @@ function KimchiDetailInner({ params }: { params: Promise<{ coin: string }> }) {
   const [liveFetchedAt, setLiveFetchedAt] = useState<string | null>(null);
   const [wallet, setWallet] = useState<{ wallet_state: string; block_state: string; message: string } | null>(null);
   const [gate, setGate] = useState<{ chains: { name: string; depositOk: boolean; withdrawOk: boolean; delayed: boolean }[] } | null>(null);
+  const [upbitNets, setUpbitNets] = useState<{ net: string; name: string; fee: number }[]>([]);
 
   const refreshLive = useCallback(async () => {
     try {
@@ -81,6 +125,8 @@ function KimchiDetailInner({ params }: { params: Promise<{ coin: string }> }) {
       const list = Array.isArray(walletData?.data) ? walletData.data : [];
       const entry = list.find((e: { currency?: string }) => e.currency === coin) ?? null;
       if (entry) setWallet({ wallet_state: entry.wallet_state, block_state: entry.block_state, message: entry.message ?? "" });
+      const nets = (walletData?.networks as Record<string, { net: string; name: string; fee: number }[]> | undefined)?.[coin];
+      if (Array.isArray(nets)) setUpbitNets(nets.slice(0, 12));
       if (gateData && Array.isArray(gateData.chains) && gateData.chains.length > 0 && !gateData.delisted) {
         setGate({ chains: gateData.chains.slice(0, 8) });
       }
@@ -253,49 +299,77 @@ function KimchiDetailInner({ params }: { params: Promise<{ coin: string }> }) {
         <div className="rounded-xl border border-zinc-800 p-6 mb-6">
           <h2 className="text-base font-semibold mb-3">{lang === "ko" ? "입출금 상태" : "Wallet Status"}</h2>
           {(() => {
-            if (!wallet) {
+            if (!wallet && !gate) {
               return <p className="text-xs text-zinc-600">{lang === "ko" ? "조회 불가" : "Unavailable"}</p>;
             }
-            const netOk = wallet.block_state === "normal";
-            const depositOk = netOk && (wallet.wallet_state === "working" || wallet.wallet_state === "deposit_only");
-            const withdrawOk = netOk && (wallet.wallet_state === "working" || wallet.wallet_state === "withdraw_only");
+            const netOk = wallet ? wallet.block_state === "normal" : false;
+            const upDepositOk = !!wallet && netOk && (wallet.wallet_state === "working" || wallet.wallet_state === "deposit_only");
+            const upWithdrawOk = !!wallet && netOk && (wallet.wallet_state === "working" || wallet.wallet_state === "withdraw_only");
             const badge = (ok: boolean, label: string) => (
               <span className={`px-2.5 py-1 rounded-md text-xs font-bold ${ok ? "bg-emerald-500/15 text-emerald-300" : "bg-red-500/15 text-red-300"}`}>
                 {label} {ok ? (lang === "ko" ? "가능" : "OK") : (lang === "ko" ? "중단" : "Halted")}
               </span>
             );
+            const rows: { key: string; label: string; upNet?: { net: string; fee: number }; gate?: { depositOk: boolean; withdrawOk: boolean } }[] = [];
+            for (const n of upbitNets) {
+              const id = normNet(n.net);
+              if (!rows.some(r => r.key === id)) rows.push({ key: id, label: n.name, upNet: { net: n.net, fee: n.fee } });
+            }
+            for (const c of gate?.chains ?? []) {
+              const id = normNet(c.name);
+              const row = rows.find(r => r.key === id);
+              if (row) { if (!row.gate) row.gate = c; }
+              else rows.push({ key: id, label: c.name, gate: c });
+            }
+            const dot = (ok: boolean | null) => ok === null
+              ? <span className="text-zinc-600">-</span>
+              : <span className={ok ? "text-emerald-400" : "text-red-400"}>{ok ? "●" : "○"}</span>;
             return (
               <div>
-                <p className="text-[11px] font-semibold text-zinc-400 mb-1.5">Upbit</p>
-                <div className="flex items-center gap-2 flex-wrap">
-                  {badge(depositOk, lang === "ko" ? "입금" : "Deposit")}
-                  {badge(withdrawOk, lang === "ko" ? "출금" : "Withdraw")}
-                  {depositOk && withdrawOk && !wallet.message && (
-                    <span className="text-[11px] text-zinc-500">{lang === "ko" ? "정상" : "Normal"}</span>
+                <div className="flex items-center gap-2 flex-wrap mb-3">
+                  <span className="text-[11px] font-semibold text-zinc-400 w-14">Upbit</span>
+                  {wallet ? (
+                    <>
+                      {badge(upDepositOk, lang === "ko" ? "입금" : "Deposit")}
+                      {badge(upWithdrawOk, lang === "ko" ? "출금" : "Withdraw")}
+                    </>
+                  ) : (
+                    <span className="text-xs text-zinc-600">{lang === "ko" ? "조회 불가" : "Unavailable"}</span>
                   )}
                 </div>
-                {wallet.message && <p className="text-[11px] text-amber-300/90 mt-2">{wallet.message}</p>}
-                {(!depositOk || !withdrawOk) && (
-                  <p className="text-[11px] text-zinc-600 mt-1 font-mono">{wallet.wallet_state} / {wallet.block_state}</p>
+                {rows.length > 0 && (
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="text-zinc-500 text-left">
+                        <th className="py-1 pr-2 font-medium">{lang === "ko" ? "네트워크" : "Network"}</th>
+                        <th className="py-1 pr-2 font-medium text-center">Upbit {lang === "ko" ? "출금" : "WD"}</th>
+                        <th className="py-1 pr-2 font-medium text-center">Gate {lang === "ko" ? "입금" : "DP"}</th>
+                        <th className="py-1 pr-2 font-medium text-center">Gate {lang === "ko" ? "출금" : "WD"}</th>
+                        <th className="py-1 font-medium text-right">{lang === "ko" ? "직접 전송" : "Direct"}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map(row => {
+                        const direct = !!row.upNet && !!row.gate && upDepositOk && upWithdrawOk && row.gate.depositOk && row.gate.withdrawOk;
+                        return (
+                          <tr key={row.key} className={`border-t border-zinc-800/70 ${direct ? "bg-emerald-950/30" : ""}`}>
+                            <td className="py-1.5 pr-2 text-zinc-300">
+                              {row.label}
+                              {row.upNet && row.upNet.fee > 0 && <span className="ml-1.5 text-[10px] text-zinc-600 font-mono">⛽{row.upNet.fee}</span>}
+                            </td>
+                            <td className="py-1.5 pr-2 text-center">{dot(row.upNet ? upWithdrawOk : null)}</td>
+                            <td className="py-1.5 pr-2 text-center">{dot(row.gate ? row.gate.depositOk : null)}</td>
+                            <td className="py-1.5 pr-2 text-center">{dot(row.gate ? row.gate.withdrawOk : null)}</td>
+                            <td className="py-1.5 text-right">{direct && <span className="text-emerald-300 font-bold text-[11px]">★ {lang === "ko" ? "가능" : "OK"}</span>}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 )}
-                {gate && (
-                  <div className="mt-3 pt-3 border-t border-zinc-800">
-                    <p className="text-[11px] font-semibold text-zinc-400 mb-1.5">Gate.io</p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {gate.chains.map(c => (
-                        <span key={c.name} className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-zinc-900 border border-zinc-800 text-[11px]">
-                          <span className="font-mono text-zinc-300">{c.name}</span>
-                          <span title={lang === "ko" ? "입금" : "Deposit"} className={c.depositOk ? "text-emerald-400" : "text-red-400"}>
-                            {lang === "ko" ? "입" : "D"}{c.depositOk ? "●" : "○"}
-                          </span>
-                          <span title={lang === "ko" ? "출금" : "Withdraw"} className={c.withdrawOk ? "text-emerald-400" : "text-red-400"}>
-                            {lang === "ko" ? "출" : "W"}{c.withdrawOk ? "●" : "○"}{c.delayed ? "*" : ""}
-                          </span>
-                        </span>
-                      ))}
-                    </div>
-                    <p className="text-[10px] text-zinc-600 mt-1">* {lang === "ko" ? "출금 지연" : "withdraw delayed"}</p>
-                  </div>
+                {wallet?.message && <p className="text-[11px] text-amber-300/90 mt-2">{wallet.message}</p>}
+                {wallet && (!upDepositOk || !upWithdrawOk) && (
+                  <p className="text-[11px] text-zinc-600 mt-1 font-mono">{wallet.wallet_state} / {wallet.block_state}</p>
                 )}
               </div>
             );
