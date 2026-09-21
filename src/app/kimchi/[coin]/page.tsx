@@ -97,7 +97,7 @@ function KimchiDetailInner({ params }: { params: Promise<{ coin: string }> }) {
   const [liveFetchedAt, setLiveFetchedAt] = useState<string | null>(null);
   const [wallet, setWallet] = useState<{ wallet_state: string; block_state: string; message: string } | null>(null);
   const [gate, setGate] = useState<{ chains: { name: string; depositOk: boolean; withdrawOk: boolean; delayed: boolean }[] } | null>(null);
-  const [upbitNets, setUpbitNets] = useState<{ net: string; name: string; fee: number }[]>([]);
+  const [upbitNets, setUpbitNets] = useState<{ net: string; name: string; fee: number; wallet_state: string; block_state: string; message: string }[]>([]);
 
   const refreshLive = useCallback(async () => {
     try {
@@ -123,10 +123,22 @@ function KimchiDetailInner({ params }: { params: Promise<{ coin: string }> }) {
       const found = (kimchiData?.items as KimchiItem[] | undefined)?.find(i => i.coin.toUpperCase() === coin) ?? null;
       setItem(found);
       const list = Array.isArray(walletData?.data) ? walletData.data : [];
-      const entry = list.find((e: { currency?: string }) => e.currency === coin) ?? null;
-      if (entry) setWallet({ wallet_state: entry.wallet_state, block_state: entry.block_state, message: entry.message ?? "" });
+      const coinRows = list.filter((e: { currency?: string }) => e.currency === coin);
+      const first = coinRows[0] ?? null;
+      if (first) setWallet({ wallet_state: first.wallet_state, block_state: first.block_state, message: first.message ?? "" });
+      const feeMap = new Map<string, number>();
       const nets = (walletData?.networks as Record<string, { net: string; name: string; fee: number }[]> | undefined)?.[coin];
-      if (Array.isArray(nets)) setUpbitNets(nets.slice(0, 12));
+      if (Array.isArray(nets)) for (const n of nets) feeMap.set(n.net, n.fee);
+      if (coinRows.length > 0) {
+        setUpbitNets(coinRows.map((e: { net_type?: string; network_name?: string; wallet_state?: string; block_state?: string; message?: string }) => ({
+          net: e.net_type ?? "",
+          name: e.network_name ?? e.net_type ?? "",
+          fee: feeMap.get(e.net_type ?? "") ?? 0,
+          wallet_state: e.wallet_state ?? "",
+          block_state: e.block_state ?? "",
+          message: e.message ?? "",
+        })).filter((r: { net: string }) => r.net).slice(0, 12));
+      }
       if (gateData && Array.isArray(gateData.chains) && gateData.chains.length > 0 && !gateData.delisted) {
         setGate({ chains: gateData.chains.slice(0, 8) });
       }
@@ -299,36 +311,46 @@ function KimchiDetailInner({ params }: { params: Promise<{ coin: string }> }) {
         <div className="rounded-xl border border-zinc-800 p-6 mb-6">
           <h2 className="text-base font-semibold mb-3">{lang === "ko" ? "입출금 상태" : "Wallet Status"}</h2>
           {(() => {
-            if (!wallet && !gate) {
+            if (upbitNets.length === 0 && !gate) {
               return <p className="text-xs text-zinc-600">{lang === "ko" ? "조회 불가" : "Unavailable"}</p>;
             }
-            const netOk = wallet ? wallet.block_state === "normal" : false;
-            const upDepositOk = !!wallet && netOk && (wallet.wallet_state === "working" || wallet.wallet_state === "deposit_only");
-            const upWithdrawOk = !!wallet && netOk && (wallet.wallet_state === "working" || wallet.wallet_state === "withdraw_only");
+            const upDep = (r: { wallet_state: string; block_state: string }) =>
+              r.block_state === "normal" && (r.wallet_state === "working" || r.wallet_state === "deposit_only");
+            const upWd = (r: { wallet_state: string; block_state: string }) =>
+              r.block_state === "normal" && (r.wallet_state === "working" || r.wallet_state === "withdraw_only");
+            const upDepositOk = upbitNets.some(upDep);
+            const upWithdrawOk = upbitNets.some(upWd);
             const badge = (ok: boolean, label: string) => (
               <span className={`px-2.5 py-1 rounded-md text-xs font-bold ${ok ? "bg-emerald-500/15 text-emerald-300" : "bg-red-500/15 text-red-300"}`}>
                 {label} {ok ? (lang === "ko" ? "가능" : "OK") : (lang === "ko" ? "중단" : "Halted")}
               </span>
             );
-            const rows: { key: string; label: string; upNet?: { net: string; fee: number }; gate?: { depositOk: boolean; withdrawOk: boolean } }[] = [];
+            const rows: {
+              key: string; label: string; fee: number;
+              upDep: boolean | null; upWd: boolean | null;
+              gate?: { depositOk: boolean; withdrawOk: boolean };
+            }[] = [];
             for (const n of upbitNets) {
               const id = normNet(n.net);
-              if (!rows.some(r => r.key === id)) rows.push({ key: id, label: n.name, upNet: { net: n.net, fee: n.fee } });
+              if (!rows.some(r => r.key === id)) {
+                rows.push({ key: id, label: n.name, fee: n.fee, upDep: upDep(n), upWd: upWd(n) });
+              }
             }
             for (const c of gate?.chains ?? []) {
               const id = normNet(c.name);
               const row = rows.find(r => r.key === id);
               if (row) { if (!row.gate) row.gate = c; }
-              else rows.push({ key: id, label: c.name, gate: c });
+              else rows.push({ key: id, label: c.name, fee: 0, upDep: null, upWd: null, gate: c });
             }
             const dot = (ok: boolean | null) => ok === null
               ? <span className="text-zinc-600">-</span>
               : <span className={ok ? "text-emerald-400" : "text-red-400"}>{ok ? "●" : "○"}</span>;
+            const notice = upbitNets.map(n => n.message).find(m => m) ?? wallet?.message ?? "";
             return (
               <div>
                 <div className="flex items-center gap-2 flex-wrap mb-3">
                   <span className="text-[11px] font-semibold text-zinc-400 w-14">Upbit</span>
-                  {wallet ? (
+                  {upbitNets.length > 0 ? (
                     <>
                       {badge(upDepositOk, lang === "ko" ? "입금" : "Deposit")}
                       {badge(upWithdrawOk, lang === "ko" ? "출금" : "Withdraw")}
@@ -342,6 +364,7 @@ function KimchiDetailInner({ params }: { params: Promise<{ coin: string }> }) {
                     <thead>
                       <tr className="text-zinc-500 text-left">
                         <th className="py-1 pr-2 font-medium">{lang === "ko" ? "네트워크" : "Network"}</th>
+                        <th className="py-1 pr-2 font-medium text-center">Upbit {lang === "ko" ? "입금" : "DP"}</th>
                         <th className="py-1 pr-2 font-medium text-center">Upbit {lang === "ko" ? "출금" : "WD"}</th>
                         <th className="py-1 pr-2 font-medium text-center">Gate {lang === "ko" ? "입금" : "DP"}</th>
                         <th className="py-1 pr-2 font-medium text-center">Gate {lang === "ko" ? "출금" : "WD"}</th>
@@ -350,14 +373,15 @@ function KimchiDetailInner({ params }: { params: Promise<{ coin: string }> }) {
                     </thead>
                     <tbody>
                       {rows.map(row => {
-                        const direct = !!row.upNet && !!row.gate && upDepositOk && upWithdrawOk && row.gate.depositOk && row.gate.withdrawOk;
+                        const direct = row.upDep === true && row.upWd === true && !!row.gate && row.gate.depositOk && row.gate.withdrawOk;
                         return (
                           <tr key={row.key} className={`border-t border-zinc-800/70 ${direct ? "bg-emerald-950/30" : ""}`}>
                             <td className="py-1.5 pr-2 text-zinc-300">
                               {row.label}
-                              {row.upNet && row.upNet.fee > 0 && <span className="ml-1.5 text-[10px] text-zinc-600 font-mono">⛽{row.upNet.fee}</span>}
+                              {row.fee > 0 && <span className="ml-1.5 text-[10px] text-zinc-600 font-mono">⛽{row.fee}</span>}
                             </td>
-                            <td className="py-1.5 pr-2 text-center">{dot(row.upNet ? upWithdrawOk : null)}</td>
+                            <td className="py-1.5 pr-2 text-center">{dot(row.upDep)}</td>
+                            <td className="py-1.5 pr-2 text-center">{dot(row.upWd)}</td>
                             <td className="py-1.5 pr-2 text-center">{dot(row.gate ? row.gate.depositOk : null)}</td>
                             <td className="py-1.5 pr-2 text-center">{dot(row.gate ? row.gate.withdrawOk : null)}</td>
                             <td className="py-1.5 text-right">{direct && <span className="text-emerald-300 font-bold text-[11px]">★ {lang === "ko" ? "가능" : "OK"}</span>}</td>
@@ -367,7 +391,7 @@ function KimchiDetailInner({ params }: { params: Promise<{ coin: string }> }) {
                     </tbody>
                   </table>
                 )}
-                {wallet?.message && <p className="text-[11px] text-amber-300/90 mt-2">{wallet.message}</p>}
+                {notice && <p className="text-[11px] text-amber-300/90 mt-2">{notice}</p>}
                 {wallet && (!upDepositOk || !upWithdrawOk) && (
                   <p className="text-[11px] text-zinc-600 mt-1 font-mono">{wallet.wallet_state} / {wallet.block_state}</p>
                 )}
