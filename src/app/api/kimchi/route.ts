@@ -45,11 +45,6 @@ const ALIAS_TTL_MS = 24 * 60 * 60 * 1000;
 let aliasCache: { at: number; map: Map<string, AliasResolution> } | null = null;
 const ALIAS_RESOLVE_BATCH = 40; // per request, to avoid bursts
 
-// CMC project page -> does Binance list this coin? (24h cache, batched)
-const PRESENCE_TTL_MS = 24 * 60 * 60 * 1000;
-let presenceCache: { at: number; map: Map<string, boolean> } | null = null;
-const PRESENCE_BATCH = 30;
-
 interface AliasResolution {
   ticker: string;
   price: number;               // USD price from the CMC market pair itself
@@ -157,31 +152,6 @@ interface AliasResolution {
   ticker: string;
   price: number;               // USD price from the CMC market pair itself
   source: "spot" | "alpha";
-}
-
-async function checkBinancePresenceOnCmc(
-  coins: string[],
-  cmcEntries: Map<string, { price: number; id: number }>,
-): Promise<Map<string, boolean>> {
-  const map = presenceCache && Date.now() - presenceCache.at < PRESENCE_TTL_MS ? new Map(presenceCache.map) : new Map<string, boolean>();
-  const unresolved = coins.filter(coin => !map.has(coin) && cmcEntries.has(coin)).slice(0, PRESENCE_BATCH);
-  await Promise.all(unresolved.map(async coin => {
-    const entry = cmcEntries.get(coin);
-    if (!entry) return;
-    try {
-      const response = await fetch(
-        `https://api.coinmarketcap.com/data-api/v3/cryptocurrency/market-pairs/latest?id=${entry.id}&start=1&limit=200`,
-        { headers: CMC_HEADERS, signal: AbortSignal.timeout(8_000) },
-      );
-      if (!response.ok) return;
-      const data = await response.json() as { data?: { marketPairs?: { exchangeName?: string }[] } };
-      const pairs = data.data?.marketPairs ?? [];
-      const hasBinance = pairs.some(pair => pair.exchangeName === "Binance" || pair.exchangeName === "Binance Alpha");
-      map.set(coin, hasBinance);
-    } catch {}
-  }));
-  presenceCache = { at: Date.now(), map };
-  return map;
 }
 
 // CMC market pairs per coin (24h cache, batched) — used for symbol-collision
@@ -412,7 +382,7 @@ export async function GET() {
   ]);
 
   // Fallback to ticker if orderbook is empty (e.g., API limits)
-  let useOrderbook = upbitBooks.size > 0 && binanceBooks.size > 0;
+  const useOrderbook = upbitBooks.size > 0 && binanceBooks.size > 0;
   let tickers: Map<string, number> | null = null;
   let binancePrices: Map<string, number> | null = null;
   if (!useOrderbook) {
@@ -507,42 +477,74 @@ export async function GET() {
     }
   }
 
-  // Single batched pass over CMC market pairs: corrects symbol collisions
-  // (e.g., Upbit AI Gensyn vs Binance AI Sleepless AI) and annotates whether
-  // the CMC project page lists Binance at all.
+  // Verify-then-price: confirm via CMC market-pairs which ticker each exchange
+  // actually lists for this coin, then take that ticker's executable top-of-book
+  // (Binance bookTicker / Gate tickers == orderbook best bid/ask).
+  // Premium is always executable-vs-executable; CMC stays reference-only.
+  // Pairs-covered coins listed on neither venue are dropped (mismatch fix).
   const marketPairsByCoin = await fetchCmcMarketPairsFor(items.map(item => item.coin), cmcEntries);
 
-  // 1) Corrections: matched coins whose CMC Binance ticker differs from the Upbit ticker
-  for (const [coin, pairs] of marketPairsByCoin) {
-    const item = items.find(entry => entry.coin === coin);
-    if (!item) continue;
-    const binancePair = pairs.find(pair => pair.exchangeName === "Binance" && pair.quoteSymbol === "USDT")
-      ?? pairs.find(pair => pair.exchangeName === "Binance");
-    if (!binancePair?.baseSymbol || typeof binancePair.price !== "number" || binancePair.price <= 0) continue;
-    item.binanceOnCmc = true;
-    if (binancePair.baseSymbol === coin) continue;
-    // Ticker differs — symbol collision, replace price with the CMC-derived Binance pair price
-    item.globalUsd = binancePair.price;
-    item.globalAsk = binancePair.price;
-    if (item.globalBid !== undefined) item.globalBid = binancePair.price;
-    item.binanceSymbol = binancePair.baseSymbol;
-    item.binanceSource = pairs.some(pair => pair.exchangeName === "Binance" && pair.quoteSymbol === "USDT" && pair.baseSymbol === binancePair.baseSymbol) ? "spot" : "alpha";
+  const pickPair = (
+    pairs: { exchangeName?: string; baseSymbol?: string; quoteSymbol?: string; price?: number }[],
+    names: string[],
+  ) => {
+    for (const name of names) {
+      const hit = pairs.find(pair => pair.exchangeName === name && pair.quoteSymbol === "USDT")
+        ?? pairs.find(pair => pair.exchangeName === name);
+      if (hit?.baseSymbol) return hit;
+    }
+    return undefined;
+  };
+
+  const verifiedItems: KimchiItem[] = [];
+  for (const item of items) {
     const upbitBid = item.upbitBid ?? item.upbitKrw;
-    item.premiumPct = ((upbitBid / fxRate - binancePair.price) / binancePair.price) * 100;
-    const cmcEntry = cmcEntries.get(coin);
+    if (item.coin === "USDT" || !upbitBid || upbitBid <= 0 || !item.globalAsk || item.globalAsk <= 0) {
+      if (item.coin === "USDT") verifiedItems.push(item);
+      continue;
+    }
+    const pairs = marketPairsByCoin.get(item.coin);
+    const cmcEntry = cmcEntries.get(item.coin);
+    if (!pairs || pairs.length === 0) {
+      // No CMC pairs (no entry or not yet fetched): keep assembled quote,
+      // but force executable-vs-executable premium.
+      item.premiumPct = ((upbitBid / fxRate - item.globalAsk) / item.globalAsk) * 100;
+      verifiedItems.push(item);
+      continue;
+    }
+    const binPair = pickPair(pairs, ["Binance"]);
+    const gatePair = pickPair(pairs, ["Gate.io", "Gate"]);
+    const binBook = binPair?.baseSymbol ? binanceBooks.get(binPair.baseSymbol) : undefined;
+    const gateBook = gatePair?.baseSymbol ? gateBooks.get(gatePair.baseSymbol) : undefined;
+    if (binBook) {
+      item.globalAsk = binBook.ask;
+      item.globalBid = binBook.bid;
+      item.globalUsd = binBook.ask;
+      item.binanceSymbol = binPair!.baseSymbol !== item.coin ? binPair!.baseSymbol : undefined;
+      item.binanceSource = "spot";
+      item.binanceOnCmc = true;
+    } else if (gateBook) {
+      item.globalAsk = gateBook.ask;
+      item.globalBid = gateBook.bid;
+      item.globalUsd = gateBook.ask;
+      item.binanceSymbol = gatePair!.baseSymbol !== item.coin ? gatePair!.baseSymbol : item.coin;
+      item.binanceSource = "alpha";
+      item.binanceOnCmc = pairs.some(pair => pair.exchangeName === "Binance" || pair.exchangeName === "Binance Alpha");
+    } else {
+      continue; // listed on neither venue's book — drop instead of showing a wrong price
+    }
+    item.premiumPct = ((upbitBid / fxRate - item.globalAsk) / item.globalAsk) * 100;
     if (cmcEntry) {
       item.cmcUsd = cmcEntry.price;
-      item.binanceDevPct = Math.abs(binancePair.price - cmcEntry.price) / cmcEntry.price * 100;
+      item.binanceDevPct = Math.abs(item.globalAsk - cmcEntry.price) / cmcEntry.price * 100;
       item.verified = item.binanceDevPct <= 5;
+    } else {
+      item.verified = false;
     }
+    verifiedItems.push(item);
   }
-
-  // 2) Presence annotation for coins not covered by the pairs fetch above
-  const presenceMap = await checkBinancePresenceOnCmc(items.filter(item => !marketPairsByCoin.has(item.coin)).map(item => item.coin), cmcEntries);
-  for (const item of items) {
-    const present = presenceMap.get(item.coin);
-    if (present !== undefined) item.binanceOnCmc = present;
-  }
+  items.length = 0;
+  items.push(...verifiedItems);
 
   items.sort((left, right) => right.premiumPct - left.premiumPct);
 

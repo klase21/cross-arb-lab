@@ -17,7 +17,7 @@ Real-time **Kimchi premium tracker** and **cross-chain / cross-exchange arbitrag
 
 ## Highlights
 
-- **Kimchi Premium Tracker** — every Upbit KRW pair vs global Ask (Binance bookTicker → Gate fallback → CMC alias), CMC cross-check (≤5% verified), 24h volume, 1h sparkline + Z-Score bands, 1M KRW round-trip P&L with break-even gap.
+- **Kimchi Premium Tracker** — every Upbit KRW pair vs global Ask (Binance bookTicker → Gate fallback → CMC alias), CMC listing verification per exchange (24h pairs cache, mismatches dropped), executable-vs-executable premium on orderbook tops, 24h volume, 1h sparkline + Z-Score bands, 1M KRW round-trip P&L with break-even gap.
 - **Withdraw Arb (Upbit → DEX)** — buy on Upbit KRW, withdraw, sell on-chain. Uses the exact Uniswap gateway & Sushi aggregator endpoints the web frontends use. Bridge/gas/withdrawal baked into net spread + ROI, with Upbit round-trip scenario.
 - **Inventory Arb (CEX → CEX)** — pre-funded on both CEXes (Upbit/Bithumb/Binance/Bybit/OKX), instant hedge with no on-chain move. Dual-currency profit (KRW/USD) and re-balance calculator.
 - **Listing Sniper** — watches Binance-listed vs Upbit-missing coins + Upbit market additions. New KRW listing detection (7-day window) with browser/Telegram alert in the premium peak window (first 1–3h).
@@ -44,7 +44,8 @@ CEXes: Upbit (KRW orderbook + wallet status + withdraw fees), Bithumb (`/public/
 
 ## Data sources & quoting
 
-- **Orderbooks before last-price** — Upbit `orderbook` top bid/ask and Binance `bookTicker` ask/bid, premium = `(Upbit Bid / FX − Binance Ask)/Binance Ask`.
+- **Orderbooks before last-price** — Upbit `orderbook` top bid/ask and Binance `bookTicker` ask/bid (== orderbook best), premium always executable-vs-executable: `(Upbit Bid / FX − Binance Ask)/Binance Ask`.
+- **CMC listing verification** — per-coin market-pairs (24h cache, batched) confirm which ticker each exchange actually lists; pairs-covered coins listed on neither Binance nor Gate.io are dropped instead of priced wrong. CMC reference stays display-only; `verified` means listed + executable within 5% of reference.
 - **FX** — live USD/KRW from `open.er-api.com` → `frankfurter.dev` fallback, 30-min in-memory cache, sync accessor for cost math.
 - **CMC verification** — listing (5k, market-cap sorted) + per-coin market-pairs (24h cache, batched) for symbol-collision correction and `binanceOnCmc` flag, Gate as Alpha fallback.
 - **DEX quotes** — exclusively the web-quote APIs: Sushi `api.sushi.com/quote/v7/{chainId}` and Uniswap `entry-gateway.backend-prod.api.uniswap.org/quote` (and `/swap` for execution). No raw RPC pool quoting.
