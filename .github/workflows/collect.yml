@@ -17,5 +17,5 @@ jobs:
           head -c 500 /tmp/collect.json; echo
           test "$code" = "200"
         env:
-          APP_URL: ${{ secrets.APP_URL }}
+          APP_URL: ${{ vars.APP_URL }}
           CRON_KEY: ${{ secrets.CRON_KEY }}
