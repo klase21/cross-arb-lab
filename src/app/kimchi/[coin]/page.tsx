@@ -52,6 +52,7 @@ function KimchiDetailInner({ params }: { params: Promise<{ coin: string }> }) {
   const [loading, setLoading] = useState(true);
   const [liveUsdtKrw, setLiveUsdtKrw] = useState<number | null>(null);
   const [liveFetchedAt, setLiveFetchedAt] = useState<string | null>(null);
+  const [wallet, setWallet] = useState<{ wallet_state: string; block_state: string; message: string } | null>(null);
 
   const refreshLive = useCallback(async () => {
     try {
@@ -70,10 +71,14 @@ function KimchiDetailInner({ params }: { params: Promise<{ coin: string }> }) {
     Promise.all([
       fetch("/api/kimchi").then(r => (r.ok ? r.json() : null)).catch(() => null),
       fetch("https://open.er-api.com/v6/latest/USD").then(r => (r.ok ? r.json() : null)).catch(() => null),
-    ]).then(([kimchiData, fxData]) => {
+      fetch("/api/upbit/wallet-status").then(r => (r.ok ? r.json() : null)).catch(() => null),
+    ]).then(([kimchiData, fxData, walletData]) => {
       if (cancelled) return;
       const found = (kimchiData?.items as KimchiItem[] | undefined)?.find(i => i.coin.toUpperCase() === coin) ?? null;
       setItem(found);
+      const list = Array.isArray(walletData?.data) ? walletData.data : [];
+      const entry = list.find((e: { currency?: string }) => e.currency === coin) ?? null;
+      if (entry) setWallet({ wallet_state: entry.wallet_state, block_state: entry.block_state, message: entry.message ?? "" });
       if (fxData?.rates?.KRW) setFxRate(fxData.rates.KRW);
       else if (kimchiData?.fxRate) setFxRate(kimchiData.fxRate);
       setLoading(false);
@@ -242,9 +247,34 @@ function KimchiDetailInner({ params }: { params: Promise<{ coin: string }> }) {
 
         <div className="rounded-xl border border-zinc-800 p-6 mb-6">
           <h2 className="text-base font-semibold mb-3">{lang === "ko" ? "입출금 상태" : "Wallet Status"}</h2>
-          <a href="https://www.upbit.com/service_center/wallet_status" target="_blank" rel="noopener noreferrer" className="text-sm text-emerald-400 hover:underline">
-            {lang === "ko" ? "업비트 지갑 상태 바로가기 →" : "Check Upbit wallet status →"}
-          </a>
+          {(() => {
+            if (!wallet) {
+              return <p className="text-xs text-zinc-600">{lang === "ko" ? "조회 불가" : "Unavailable"}</p>;
+            }
+            const netOk = wallet.block_state === "normal";
+            const depositOk = netOk && (wallet.wallet_state === "working" || wallet.wallet_state === "deposit_only");
+            const withdrawOk = netOk && (wallet.wallet_state === "working" || wallet.wallet_state === "withdraw_only");
+            const badge = (ok: boolean, label: string) => (
+              <span className={`px-2.5 py-1 rounded-md text-xs font-bold ${ok ? "bg-emerald-500/15 text-emerald-300" : "bg-red-500/15 text-red-300"}`}>
+                {label} {ok ? (lang === "ko" ? "가능" : "OK") : (lang === "ko" ? "중단" : "Halted")}
+              </span>
+            );
+            return (
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {badge(depositOk, lang === "ko" ? "입금" : "Deposit")}
+                  {badge(withdrawOk, lang === "ko" ? "출금" : "Withdraw")}
+                  {depositOk && withdrawOk && !wallet.message && (
+                    <span className="text-[11px] text-zinc-500">{lang === "ko" ? "정상" : "Normal"}</span>
+                  )}
+                </div>
+                {wallet.message && <p className="text-[11px] text-amber-300/90 mt-2">{wallet.message}</p>}
+                {(!depositOk || !withdrawOk) && (
+                  <p className="text-[11px] text-zinc-600 mt-1 font-mono">{wallet.wallet_state} / {wallet.block_state}</p>
+                )}
+              </div>
+            );
+          })()}
         </div>
       </main>
     </div>
