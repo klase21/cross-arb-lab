@@ -35,13 +35,52 @@ export interface PaperAccount {
   startedUsd: number;
   positions: PaperPosition[];
   fills: PaperFill[];
+  funding: FundingPosition[];
+  fundingClosed: FundingClosed[];
+  closedTrades: ClosedTrade[];
   updatedAt: number;
 }
+
+export interface FundingPosition {
+  id: string;
+  base: string;
+  longVenue: string;
+  shortVenue: string;
+  notionalUsd: number;
+  entryLongMark: number;
+  entryShortMark: number;
+  accFundingUsd: number;
+  openedAt: number;
+  lastAccrueAt: number;
+}
+
+export interface FundingClosed {
+  id: string;
+  base: string;
+  longVenue: string;
+  shortVenue: string;
+  pnlUsd: number;
+  fundingUsd: number;
+  pricePnlUsd: number;
+  closedAt: number;
+}
+
+/** Fully-closed spot position, kept for per-asset stats (pnl already in cash). */
+export interface ClosedTrade {
+  id: string;
+  venue: PaperVenue;
+  coin: string;
+  qty: number;
+  realizedPnlUsd: number;
+  closedAt: number;
+}
+
+const MS_PER_YEAR = 365 * 24 * 3600 * 1000;
 
 const STORAGE_KEY = "paperAccount";
 
 export function newAccount(startedUsd: number): PaperAccount {
-  return { cashUsd: startedUsd, startedUsd, positions: [], fills: [], updatedAt: Date.now() };
+  return { cashUsd: startedUsd, startedUsd, positions: [], fills: [], funding: [], fundingClosed: [], closedTrades: [], updatedAt: Date.now() };
 }
 
 function uid(): string {
@@ -85,7 +124,7 @@ export function executeMarket(
     }
     const fill: PaperFill = { id: uid(), ts: Date.now(), venue: quote.venue, coin: quote.coin, side, qty, priceUsd: price, feeUsd: fee, note };
     fills.unshift(fill);
-    return { account: { cashUsd, startedUsd: account.startedUsd, positions, fills: fills.slice(0, 300), updatedAt: Date.now() }, fill };
+    return { account: { ...account, cashUsd, positions, fills: fills.slice(0, 300), updatedAt: Date.now() }, fill };
   }
 
   const pos = positions.find(p => p.venue === quote.venue && p.coin === quote.coin);
@@ -95,10 +134,21 @@ export function executeMarket(
   cashUsd += gross - fee;
   pos.realizedPnlUsd += (price - pos.avgPriceUsd) * qty - fee;
   pos.qty -= qty;
+  const closed = pos.qty <= 1e-12;
   const kept = positions.filter(p => p.qty > 1e-12);
   const fill: PaperFill = { id: uid(), ts: Date.now(), venue: quote.venue, coin: quote.coin, side, qty, priceUsd: price, feeUsd: fee, note };
   fills.unshift(fill);
-  return { account: { cashUsd, startedUsd: account.startedUsd, positions: kept, fills: fills.slice(0, 300), updatedAt: Date.now() }, fill };
+  const closedTrades = [...account.closedTrades];
+  if (closed) {
+    closedTrades.unshift({
+      id: uid(), venue: quote.venue, coin: quote.coin,
+      qty, realizedPnlUsd: pos.realizedPnlUsd, closedAt: Date.now(),
+    });
+  }
+  return {
+    account: { ...account, cashUsd, positions: kept, fills: fills.slice(0, 300), closedTrades: closedTrades.slice(0, 300), updatedAt: Date.now() },
+    fill,
+  };
 }
 
 export interface PaperValuation {
@@ -111,7 +161,11 @@ export interface PaperValuation {
   totalPnlPct: number;
 }
 
-export function valuate(account: PaperAccount, mark: (venue: PaperVenue, coin: string) => number | null): PaperValuation {
+export function valuate(
+  account: PaperAccount,
+  mark: (venue: PaperVenue, coin: string) => number | null,
+  fundingMark?: (base: string, venue: string) => number | null,
+): PaperValuation {
   let positionsValueUsd = 0;
   let unrealizedPnlUsd = 0;
   let realizedPnlUsd = 0;
@@ -122,7 +176,21 @@ export function valuate(account: PaperAccount, mark: (venue: PaperVenue, coin: s
     if (m !== null) unrealizedPnlUsd += (m - p.avgPriceUsd) * p.qty;
     realizedPnlUsd += p.realizedPnlUsd;
   }
-  const equityUsd = account.cashUsd + positionsValueUsd;
+  // Open funding positions: accrued funding always counts; live price PnL too
+  // when marks are available.
+  let fundingAcc = 0;
+  for (const f of account.funding) {
+    fundingAcc += f.accFundingUsd;
+    unrealizedPnlUsd += f.accFundingUsd;
+    if (fundingMark) {
+      const lm = fundingMark(f.base, f.longVenue);
+      const sm = fundingMark(f.base, f.shortVenue);
+      if (lm !== null && f.entryLongMark > 0) unrealizedPnlUsd += f.notionalUsd * (lm / f.entryLongMark - 1);
+      if (sm !== null && f.entryShortMark > 0) unrealizedPnlUsd += f.notionalUsd * (1 - sm / f.entryShortMark);
+    }
+  }
+  for (const c of account.fundingClosed) realizedPnlUsd += c.pnlUsd;
+  const equityUsd = account.cashUsd + positionsValueUsd + fundingAcc;
   const totalPnlUsd = equityUsd - account.startedUsd;
   return {
     equityUsd,
@@ -142,6 +210,10 @@ export function loadAccount(): PaperAccount | null {
     if (!raw) return null;
     const parsed = JSON.parse(raw) as PaperAccount;
     if (!Number.isFinite(parsed.cashUsd) || !Array.isArray(parsed.positions) || !Array.isArray(parsed.fills)) return null;
+    // Normalize accounts saved before funding/closed-trade fields existed.
+    if (!Array.isArray(parsed.funding)) parsed.funding = [];
+    if (!Array.isArray(parsed.fundingClosed)) parsed.fundingClosed = [];
+    if (!Array.isArray(parsed.closedTrades)) parsed.closedTrades = [];
     return parsed;
   } catch {
     return null;
@@ -178,4 +250,156 @@ export function consumeDraft(): string | null {
   } catch {
     return null;
   }
+}
+
+/** Pair (inventory-hedge) trade: buy on one venue while simultaneously selling
+ * the same qty from existing inventory on the other venue. Atomic — either
+ * both legs fill or nothing happens. The sell leg requires inventory, which
+ * mirrors real CEX-to-CEX arbitrage (no naked shorts). */
+export function executePair(
+  account: PaperAccount,
+  buyQuote: PaperQuote,
+  sellQuote: PaperQuote,
+  qty: number,
+  note?: string,
+): { account: PaperAccount; fills: PaperFill[] } | { error: string } {
+  if (buyQuote.venue === sellQuote.venue || buyQuote.coin !== sellQuote.coin) {
+    return { error: "pair" };
+  }
+  const first = executeMarket(account, buyQuote, "buy", qty, note);
+  if ("error" in first) return first;
+  const second = executeMarket(first.account, sellQuote, "sell", qty, note);
+  if ("error" in second) return second;
+  return { account: second.account, fills: [first.fill, second.fill] };
+}
+
+// ---------------------------------------------------------------- funding ---
+
+/** Open a delta-neutral funding position (10% notional margin proxy, no lock). */
+export function openFunding(
+  account: PaperAccount,
+  input: {
+    base: string;
+    longVenue: string;
+    shortVenue: string;
+    notionalUsd: number;
+    longMark: number;
+    shortMark: number;
+  },
+): { account: PaperAccount; position: FundingPosition } | { error: string } {
+  const { base, longVenue, shortVenue, notionalUsd, longMark, shortMark } = input;
+  if (longVenue === shortVenue) return { error: "pair" };
+  if (!(notionalUsd > 0) || !Number.isFinite(notionalUsd)) return { error: "qty" };
+  if (!(longMark > 0) || !(shortMark > 0)) return { error: "price" };
+  if (account.cashUsd < notionalUsd * 0.1) return { error: "cash" };
+  if (account.funding.some(f => f.base === base)) return { error: "exists" };
+  const now = Date.now();
+  const position: FundingPosition = {
+    id: uid(), base, longVenue, shortVenue, notionalUsd,
+    entryLongMark: longMark, entryShortMark: shortMark,
+    accFundingUsd: 0, openedAt: now, lastAccrueAt: now,
+  };
+  return {
+    account: { ...account, funding: [position, ...account.funding].slice(0, 30), updatedAt: now },
+    position,
+  };
+}
+
+/** Accrue funding between lastAccrueAt and now from live APRs (long pays short when positive). */
+export function accrueFunding(
+  position: FundingPosition,
+  longApr: number,
+  shortApr: number,
+  now: number,
+): FundingPosition {
+  const dtYears = Math.max(0, (now - position.lastAccrueAt) / MS_PER_YEAR);
+  return {
+    ...position,
+    accFundingUsd: position.accFundingUsd + (position.notionalUsd * (shortApr - longApr)) / 100 * dtYears,
+    lastAccrueAt: now,
+  };
+}
+
+export function fundingPricePnl(
+  position: FundingPosition,
+  longMark: number | null,
+  shortMark: number | null,
+): number {
+  let pnl = 0;
+  if (longMark !== null && position.entryLongMark > 0) {
+    pnl += position.notionalUsd * (longMark / position.entryLongMark - 1);
+  }
+  if (shortMark !== null && position.entryShortMark > 0) {
+    pnl += position.notionalUsd * (1 - shortMark / position.entryShortMark);
+  }
+  return pnl;
+}
+
+export function closeFunding(
+  account: PaperAccount,
+  positionId: string,
+  live: { longApr: number; shortApr: number; longMark: number | null; shortMark: number | null },
+  now: number,
+): { account: PaperAccount; closed: FundingClosed } | { error: string } {
+  const position = account.funding.find(f => f.id === positionId);
+  if (!position) return { error: "position" };
+  const accrued = accrueFunding(position, live.longApr, live.shortApr, now);
+  const pricePnl = fundingPricePnl(accrued, live.longMark, live.shortMark);
+  const total = accrued.accFundingUsd + pricePnl;
+  const closed: FundingClosed = {
+    id: position.id, base: position.base,
+    longVenue: position.longVenue, shortVenue: position.shortVenue,
+    pnlUsd: total, fundingUsd: accrued.accFundingUsd, pricePnlUsd: pricePnl, closedAt: now,
+  };
+  return {
+    account: {
+      ...account,
+      cashUsd: account.cashUsd + total,
+      funding: account.funding.filter(f => f.id !== positionId),
+      fundingClosed: [closed, ...account.fundingClosed].slice(0, 100),
+      updatedAt: now,
+    },
+    closed,
+  };
+}
+
+// -------------------------------------------------------- equity snapshots ---
+
+export interface EquityPoint {
+  t: number;
+  e: number;
+}
+
+const EQUITY_KEY = "paperEquity";
+
+export function recordEquity(equityUsd: number): EquityPoint[] {
+  try {
+    const raw = localStorage.getItem(EQUITY_KEY);
+    const pts: EquityPoint[] = raw ? (JSON.parse(raw) as EquityPoint[]) : [];
+    const last = pts[pts.length - 1];
+    if (!last || Date.now() - last.t > 5 * 60 * 1000 || Math.abs(equityUsd - last.e) > 1e-9) {
+      pts.push({ t: Date.now(), e: equityUsd });
+    }
+    const trimmed = pts.slice(-500);
+    localStorage.setItem(EQUITY_KEY, JSON.stringify(trimmed));
+    return trimmed;
+  } catch {
+    return [];
+  }
+}
+
+export function loadEquity(): EquityPoint[] {
+  try {
+    const raw = localStorage.getItem(EQUITY_KEY);
+    const pts = raw ? (JSON.parse(raw) as EquityPoint[]) : [];
+    return Array.isArray(pts) ? pts : [];
+  } catch {
+    return [];
+  }
+}
+
+export function clearEquity(): void {
+  try {
+    localStorage.removeItem(EQUITY_KEY);
+  } catch {}
 }

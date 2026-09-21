@@ -24,6 +24,7 @@ export interface FutRow {
 export interface VenueQuote {
   venue: string;
   apr: number;
+  mark: number | null;
 }
 
 export interface FundingArb {

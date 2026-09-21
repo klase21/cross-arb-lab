@@ -10,6 +10,7 @@ import TaView from "@/components/TaView";
 import FuturesView from "@/components/FuturesView";
 import PaperView from "@/components/PaperView";
 import SniperView from "@/components/SniperView";
+import PaperAutoRunner from "@/components/PaperAutoRunner";
 import { LangProvider, useLang } from "@/lib/i18n";
 
 const TAB_DEFS = [
@@ -88,6 +89,7 @@ export default function Home() {
   return (
     <LangProvider>
       <HomeInner />
+      <PaperAutoRunner />
     </LangProvider>
   );
 }

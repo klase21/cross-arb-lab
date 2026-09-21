@@ -18,14 +18,15 @@ interface HlMeta {
 
 interface HlCtx {
   funding: string;
+  markPx: string;
 }
 
 interface DydxMarkets {
-  markets: Record<string, { ticker: string; status: string; nextFundingRate: string }>;
+  markets: Record<string, { ticker: string; status: string; nextFundingRate: string; oraclePrice: string }>;
 }
 
 interface ParadexSummary {
-  results: { symbol: string; funding_rate: string }[];
+  results: { symbol: string; funding_rate: string; mark_price: string }[];
 }
 
 async function fetchJson(url: string, init?: RequestInit, timeoutMs = 12000): Promise<Response> {
@@ -60,34 +61,38 @@ export async function GET() {
     };
 
     const byBase = new Map<string, VenueQuote[]>();
-    const add = (base: string, venue: string, apr: number) => {
+    const num = (v: string | undefined): number | null => {
+      const n = Number.parseFloat(v ?? "");
+      return n > 0 ? n : null;
+    };
+    const add = (base: string, venue: string, apr: number, mark: number | null) => {
       if (!base || !Number.isFinite(apr)) return;
       const list = byBase.get(base) ?? [];
-      if (!list.some(q => q.venue === venue)) list.push({ venue, apr });
+      if (!list.some(q => q.venue === venue)) list.push({ venue, apr, mark });
       byBase.set(base, list);
     };
 
     // Binance is optional: if its region is blocked, the other four venues still compare.
     if (binRes && binRes.ok) {
       venueStatus.Binance = true;
-      const premAll = (await binRes.json()) as PremIdx[];
+      const premAll = (await binRes.json()) as (PremIdx & { markPrice: string })[];
       for (const p of premAll) {
         if (!p.symbol.endsWith("USDT")) continue;
-        add(p.symbol.slice(0, -4), "Binance", eightHourApr(Number.parseFloat(p.lastFundingRate) || 0));
+        add(p.symbol.slice(0, -4), "Binance", eightHourApr(Number.parseFloat(p.lastFundingRate) || 0), num(p.markPrice));
       }
     }
 
     const [hlMeta, hlCtxs] = (await hlRes.json()) as [HlMeta, HlCtx[]];
     hlMeta.universe.forEach((u, i) => {
       const ctx = hlCtxs[i];
-      if (ctx) add(u.name, "Hyperliquid", hourlyApr(Number.parseFloat(ctx.funding) || 0));
+      if (ctx) add(u.name, "Hyperliquid", hourlyApr(Number.parseFloat(ctx.funding) || 0), num(ctx.markPx));
     });
 
     if (asterRes && asterRes.ok) {
-      const aster = (await asterRes.json()) as PremIdx[];
+      const aster = (await asterRes.json()) as (PremIdx & { markPrice: string })[];
       for (const p of aster) {
         if (!p.symbol.endsWith("USDT")) continue;
-        add(p.symbol.slice(0, -4), "Aster", eightHourApr(Number.parseFloat(p.lastFundingRate) || 0));
+        add(p.symbol.slice(0, -4), "Aster", eightHourApr(Number.parseFloat(p.lastFundingRate) || 0), num(p.markPrice));
       }
     }
 
@@ -96,7 +101,7 @@ export async function GET() {
       for (const m of Object.values(dydx.markets)) {
         if (m.status !== "ACTIVE") continue;
         const base = m.ticker.split("-")[0];
-        add(base, "dYdX", hourlyApr(Number.parseFloat(m.nextFundingRate) || 0));
+        add(base, "dYdX", hourlyApr(Number.parseFloat(m.nextFundingRate) || 0), num(m.oraclePrice));
       }
     }
 
@@ -104,7 +109,7 @@ export async function GET() {
       const par = (await parRes.json()) as ParadexSummary;
       for (const r of par.results ?? []) {
         if (!r.symbol.endsWith("-USD-PERP")) continue;
-        add(r.symbol.replace(/-USD-PERP$/, ""), "Paradex", eightHourApr(Number.parseFloat(r.funding_rate) || 0));
+        add(r.symbol.replace(/-USD-PERP$/, ""), "Paradex", eightHourApr(Number.parseFloat(r.funding_rate) || 0), num(r.mark_price));
       }
     }
 
