@@ -5,6 +5,7 @@ import { LangProvider, useLang } from "@/lib/i18n";
 import { useDisplayCurrency } from "@/lib/use-currency";
 import { scoreKimchi, riskColor, riskBarColor } from "@/lib/risk-scorer";
 import HistoryChart from "@/components/HistoryChart";
+import { normNet } from "@/lib/networks";
 
 interface KimchiItem {
   coin: string;
@@ -40,49 +41,6 @@ function fmtKrw(n: number): string {
 
 function fmtUsd(n: number): string {
   return "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 });
-}
-
-// Canonical network id so Upbit net_type and Gate chain names can be matched
-// (ETH=Ethereum, BSC=BNB Chain, MATIC=Polygon, ...).
-const NET_ALIASES: Record<string, string> = {
-  eth: "eth", ethereum: "eth",
-  btc: "btc", bitcoin: "btc",
-  bsc: "bsc", bnb: "bsc",
-  matic: "matic", polygon: "matic",
-  trx: "trx", tron: "trx",
-  arb: "arb", arbitrum: "arb",
-  op: "op", optimism: "op",
-  avax: "avax", avalanche: "avax", avalanchec: "avax",
-  sol: "sol", solana: "sol",
-  ada: "ada", cardano: "ada",
-  xrp: "xrp", ripple: "xrp",
-  doge: "doge", dogecoin: "doge",
-  ltc: "ltc", litecoin: "ltc",
-  dot: "dot", polkadot: "dot",
-  atom: "atom", cosmos: "atom",
-  kaia: "kaia", klay: "kaia", klaytn: "kaia",
-  apt: "apt", aptos: "apt",
-  sui: "sui", sei: "sei",
-  inj: "inj", injective: "inj",
-  tia: "tia", celestia: "tia",
-  base: "base", blast: "blast",
-  linea: "linea", scroll: "scroll", zksync: "zksync",
-  mnt: "mnt", mantle: "mnt",
-  near: "near", hbar: "hbar", hedera: "hbar",
-  algo: "algo", algorand: "algo",
-  xlm: "xlm", stellar: "xlm",
-  ftm: "ftm", fantom: "ftm",
-  one: "one", harmony: "one",
-  fil: "fil", filecoin: "fil",
-  ar: "ar", arweave: "ar",
-  etc: "etc", bch: "bch",
-  xtz: "xtz", tezos: "xtz",
-  eos: "eos", neo: "neo",
-};
-
-function normNet(raw: string): string {
-  const key = raw.toLowerCase().replace(/[^a-z0-9]/g, "");
-  return NET_ALIASES[key] ?? key;
 }
 
 function KimchiDetailInner({ params }: { params: Promise<{ coin: string }> }) {

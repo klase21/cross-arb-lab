@@ -7,6 +7,7 @@ import { scoreKimchi, riskColor } from "@/lib/risk-scorer";
 import { useLang } from "@/lib/i18n";
 import { useDisplayCurrency } from "@/lib/use-currency";
 import { stageDraft } from "@/lib/paper";
+import { hasDirectTransfer, normNet } from "@/lib/networks";
 
 interface KimchiItem {
   coin: string;
@@ -101,6 +102,9 @@ export default function KimchiView() {
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [walletMap, setWalletMap] = useState<Map<string, { wallet_state: string; block_state: string; message: string }>>(new Map());
+  const [upbitNetsMap, setUpbitNetsMap] = useState<Map<string, { net: string; ws: string; bs: string }[]>>(new Map());
+  const [gateBulk, setGateBulk] = useState<Record<string, { name: string; depositOk: boolean; withdrawOk: boolean }[]>>({});
+  const gateCoinsKey = useRef<string>("");
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
   const [sortKey, setSortKey] = useState<SortKey>("opportunity");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
@@ -176,12 +180,21 @@ export default function KimchiView() {
         const walletData = await walletRes.json();
         const list = Array.isArray(walletData.data) ? walletData.data : [];
         const map = new Map<string, { wallet_state: string; block_state: string; message: string }>();
+        const nets = new Map<string, { net: string; ws: string; bs: string }[]>();
         for (const entry of list) {
           if (entry.currency && !map.has(entry.currency)) {
             map.set(entry.currency, { wallet_state: entry.wallet_state, block_state: entry.block_state, message: entry.message ?? "" });
           }
+          if (entry.currency && entry.net_type) {
+            const arr = nets.get(entry.currency) ?? [];
+            if (!arr.some(x => x.net === entry.net_type)) {
+              arr.push({ net: entry.net_type, ws: entry.wallet_state ?? "", bs: entry.block_state ?? "" });
+            }
+            nets.set(entry.currency, arr);
+          }
         }
         if (map.size > 0) setWalletMap(map);
+        if (nets.size > 0) setUpbitNetsMap(nets);
       }
       setLastUpdated(new Date().toLocaleTimeString(lang === "ko" ? "ko-KR" : "en-US"));
     } catch {} finally {
@@ -190,6 +203,50 @@ export default function KimchiView() {
   }, []);
 
   const intervalSec = usePollingInterval();
+
+  // Gate chains for table badges (only coins actually listed on Gate matter).
+  useEffect(() => {
+    let cancelled = false;
+    const fetchGate = async () => {
+      const coins = items.map(i => i.coin).filter(c => /^[A-Z0-9]{2,12}$/.test(c));
+      const key = coins.slice().sort().join(",");
+      if (!coins.length || key === gateCoinsKey.current) return;
+      gateCoinsKey.current = key;
+      try {
+        const res = await fetch(`/api/gate/wallet-status?currencies=${encodeURIComponent(coins.join(","))}`);
+        if (!res.ok || cancelled) return;
+        const data = await res.json();
+        if (data.chains) setGateBulk(data.chains);
+      } catch {}
+    };
+    const kickoff = setTimeout(() => { void fetchGate(); }, 0);
+    const timer = setInterval(() => { gateCoinsKey.current = ""; void fetchGate(); }, 10 * 60 * 1000);
+    return () => { cancelled = true; clearTimeout(kickoff); clearInterval(timer); };
+  }, [items]);
+
+  // Physically impossible arb: alpha-indicative (no venue) or Gate-leg with no
+  // commonly open network. Binance-spot legs can't be judged (needs key).
+  const blockedMap = useMemo(() => {
+    const map = new Map<string, "alpha" | "network">();
+    for (const item of items) {
+      if (item.binanceSource === "alpha") {
+        map.set(item.coin, "alpha");
+        continue;
+      }
+      if (item.binanceSource !== "gate") continue;
+      const upNets = upbitNetsMap.get(item.coin);
+      const gateChains = gateBulk[item.coin];
+      if (!upNets || upNets.length === 0 || !gateChains || gateChains.length === 0) continue;
+      const up = upNets.map(n => ({
+        net: n.net,
+        depositOk: n.bs === "normal" && (n.ws === "working" || n.ws === "deposit_only"),
+        withdrawOk: n.bs === "normal" && (n.ws === "working" || n.ws === "withdraw_only"),
+      }));
+      const gate = gateChains.map(c => ({ name: c.name, depositOk: c.depositOk, withdrawOk: c.withdrawOk }));
+      if (!hasDirectTransfer(up, gate)) map.set(item.coin, "network");
+    }
+    return map;
+  }, [items, upbitNetsMap, gateBulk]);
 
   useEffect(() => {
     load();
@@ -620,6 +677,16 @@ export default function KimchiView() {
                         </a>
                       );
                     })()}
+                    {blockedMap.get(item.coin) && (
+                      <span
+                        className="ml-1 inline-flex items-center px-1.5 py-0.5 rounded bg-red-500/15 text-red-300 text-[10px] font-bold"
+                        title={blockedMap.get(item.coin) === "alpha"
+                          ? (lang === "ko" ? "체결 가능한 거래소 없음 — 물리적 차익 불가" : "No executable venue — arb impossible")
+                          : (lang === "ko" ? "공통 전송 네트워크 없음 — 물리적 차익 불가" : "No common transfer network — arb impossible")}
+                      >
+                        ⛔
+                      </span>
+                    )}
                   </td>
                   <td className={`text-right px-4 py-2.5 pr-5 font-mono ${!trip ? "text-zinc-600" : trip.netProfitKrw >= 0 ? "text-emerald-400" : "text-red-400"}`}>
                     {!trip ? "-" : (
@@ -701,7 +768,13 @@ export default function KimchiView() {
                     const w = walletMap.get(item.coin);
                     const label = !w ? "-" : w.wallet_state === "working" && w.block_state === "normal" && !w.message ? t("kimchi.wallet.normal") : w.wallet_state === "withdraw_only" ? t("kimchi.wallet.withdrawOnly") : w.wallet_state;
                     const color = !w ? "text-zinc-600" : w.wallet_state === "working" && w.block_state === "normal" && !w.message ? "text-emerald-400" : "text-amber-400";
-                    return <span className={`text-xs ${color}`}>{label}</span>;
+                    const blocked = blockedMap.get(item.coin);
+                    return (
+                      <span className={`text-xs ${color}`}>
+                        {label}
+                        {blocked && <span className="ml-1 text-red-300 font-bold" title={blocked === "alpha" ? "No executable venue" : "No common network"}>⛔</span>}
+                      </span>
+                    );
                   })()}
                 </div>
               </div>
