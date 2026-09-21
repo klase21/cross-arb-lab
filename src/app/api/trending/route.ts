@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { BINANCE_BAPI } from "@/lib/binance";
 
 export const dynamic = "force-dynamic";
 
@@ -102,7 +103,7 @@ async function enrichToken(chainId: string, tokenAddress: string): Promise<Parti
 async function fetchBinanceListings(): Promise<CexListing[]> {
   try {
     const res = await fetch(
-      "https://www.binance.com/bapi/composite/v1/public/cms/article/catalog/list/query?catalogId=48&pageNo=1&pageSize=20",
+      `${BINANCE_BAPI}/bapi/composite/v1/public/cms/article/catalog/list/query?catalogId=48&pageNo=1&pageSize=20`,
       { headers: BROWSER_HEADERS, signal: AbortSignal.timeout(8000), next: { revalidate: 300 } },
     );
     if (!res.ok) return [];

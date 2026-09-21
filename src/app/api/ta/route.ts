@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { analyze, type Candle, type TaReading } from "@/lib/ta";
+import { BINANCE_SPOT } from "@/lib/binance";
 
 export const dynamic = "force-dynamic";
 
-const BINANCE_24H = "https://api.binance.com/api/v3/ticker/24hr";
-const BINANCE_KLINES = "https://api.binance.com/api/v3/klines";
+const BINANCE_24H = `${BINANCE_SPOT}/api/v3/ticker/24hr`;
+const BINANCE_KLINES = `${BINANCE_SPOT}/api/v3/klines`;
 const UPBIT_MARKETS = "https://api.upbit.com/v1/market/all?isDetails=false";
 
 const INTERVALS = new Set(["15m", "1h", "4h", "1d"]);

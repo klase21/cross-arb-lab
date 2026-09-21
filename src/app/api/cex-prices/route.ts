@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getUsdKrwRate } from "@/lib/fx";
+import { BINANCE_SPOT } from "@/lib/binance";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +15,7 @@ export async function GET() {
   fetchers.push((async () => {
     try {
       const symbols = COINS.filter(coin => coin !== "USDT").map(c => `"${c}USDT"`).join(",");
-      const res = await fetch(`https://api.binance.com/api/v3/ticker/price?symbols=[${symbols}]`, { next: { revalidate: 5 } });
+      const res = await fetch(`${BINANCE_SPOT}/api/v3/ticker/price?symbols=[${symbols}]`, { next: { revalidate: 5 } });
       if (!res.ok) return;
       const data = await res.json();
       for (const d of data) {

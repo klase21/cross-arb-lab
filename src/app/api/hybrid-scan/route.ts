@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { scanAllChains } from "@/lib/price-scanner";
 import { findHybridOpportunities } from "@/lib/hybrid-arbitrage";
+import { BINANCE_SPOT } from "@/lib/binance";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +12,7 @@ export async function GET() {
     const COINS = ["BTC", "ETH"];
     const prices: Record<string, Record<string, number>> = {};
     try {
-      const res = await fetch("https://api.binance.com/api/v3/ticker/price?symbols=[\"BTCUSDT\",\"ETHUSDT\"]", { next: { revalidate: 5 } });
+      const res = await fetch(`${BINANCE_SPOT}/api/v3/ticker/price?symbols=["BTCUSDT","ETHUSDT"]`, { next: { revalidate: 5 } });
       if (res.ok) {
         const data = await res.json();
         for (const d of data) {

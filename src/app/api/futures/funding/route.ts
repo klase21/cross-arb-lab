@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { eightHourApr, hourlyApr, type FundingArb, type VenueQuote } from "@/lib/futures";
+import { BINANCE_FAPI } from "@/lib/binance";
 
 export const dynamic = "force-dynamic";
 
@@ -38,7 +39,7 @@ export async function GET() {
   }
   try {
     const [binRes, hlRes, asterRes, dydxRes, parRes] = await Promise.all([
-      fetchJson("https://fapi.binance.com/fapi/v1/premiumIndex"),
+      fetchJson(`${BINANCE_FAPI}/fapi/v1/premiumIndex`).catch(() => null),
       fetchJson("https://api.hyperliquid.xyz/info", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -48,8 +49,15 @@ export async function GET() {
       fetchJson("https://indexer.dydx.trade/v4/perpetualMarkets").catch(() => null),
       fetchJson("https://api.prod.paradex.trade/v1/markets/summary?market=ALL").catch(() => null),
     ]);
-    if (!binRes.ok) throw new Error(`binance ${binRes.status}`);
     if (!hlRes.ok) throw new Error(`hyperliquid ${hlRes.status}`);
+
+    const venueStatus: Record<string, boolean> = {
+      Binance: false,
+      Hyperliquid: true,
+      Aster: asterRes !== null && asterRes.ok,
+      dYdX: dydxRes !== null && dydxRes.ok,
+      Paradex: parRes !== null && parRes.ok,
+    };
 
     const byBase = new Map<string, VenueQuote[]>();
     const add = (base: string, venue: string, apr: number) => {
@@ -59,10 +67,14 @@ export async function GET() {
       byBase.set(base, list);
     };
 
-    const premAll = (await binRes.json()) as PremIdx[];
-    for (const p of premAll) {
-      if (!p.symbol.endsWith("USDT")) continue;
-      add(p.symbol.slice(0, -4), "Binance", eightHourApr(Number.parseFloat(p.lastFundingRate) || 0));
+    // Binance is optional: if its region is blocked, the other four venues still compare.
+    if (binRes && binRes.ok) {
+      venueStatus.Binance = true;
+      const premAll = (await binRes.json()) as PremIdx[];
+      for (const p of premAll) {
+        if (!p.symbol.endsWith("USDT")) continue;
+        add(p.symbol.slice(0, -4), "Binance", eightHourApr(Number.parseFloat(p.lastFundingRate) || 0));
+      }
     }
 
     const [hlMeta, hlCtxs] = (await hlRes.json()) as [HlMeta, HlCtx[]];
@@ -112,13 +124,6 @@ export async function GET() {
       });
     }
     rows.sort((a, b) => Math.abs(b.spreadApr) - Math.abs(a.spreadApr));
-    const venueStatus = {
-      Binance: true,
-      Hyperliquid: true,
-      Aster: asterRes !== null && asterRes.ok,
-      dYdX: dydxRes !== null && dydxRes.ok,
-      Paradex: parRes !== null && parRes.ok,
-    };
     const payload = { rows: rows.slice(0, 40), count: rows.length, venueStatus, timestamp: new Date().toISOString() };
     cache = { at: now, data: payload };
     return NextResponse.json(payload, { headers: { "Cache-Control": "public, max-age=60" } });

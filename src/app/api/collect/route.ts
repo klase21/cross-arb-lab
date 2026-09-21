@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getUsdKrwRate } from "@/lib/fx";
+import { BINANCE_SPOT } from "@/lib/binance";
 import { dbEnabled, ensureSchema, insertPrices, pruneHistory } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
@@ -40,7 +41,7 @@ export async function GET(req: Request) {
 
     const [upbitMarkets, binance24, bithumb, bybit, okx] = await Promise.all([
       getJson("https://api.upbit.com/v1/market/all?isDetails=false").catch(() => [] as { market: string }[]),
-      getJson("https://api.binance.com/api/v3/ticker/24hr").catch(() => []),
+      getJson(`${BINANCE_SPOT}/api/v3/ticker/24hr`).catch(() => []),
       getJson("https://api.bithumb.com/public/ticker/ALL_KRW").catch(() => null),
       getJson("https://api.bybit.com/v5/market/tickers?category=spot").catch(() => null),
       getJson("https://www.okx.com/api/v5/market/tickers?instType=SPOT").catch(() => null),

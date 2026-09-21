@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
+import { BINANCE_FAPI } from "@/lib/binance";
 
 export const dynamic = "force-dynamic";
 
-const FAPI = "https://fapi.binance.com";
+const FAPI = BINANCE_FAPI;
 const CACHE_TTL_MS = 60 * 1000;
 const cache = new Map<string, { at: number; data: unknown }>();
 

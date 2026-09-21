@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { BINANCE_SPOT } from "@/lib/binance";
 
 export const dynamic = "force-dynamic";
 
@@ -33,7 +34,7 @@ export async function GET() {
   try {
     const [marketRes, binanceRes, cmcRes] = await Promise.all([
       fetch("https://api.upbit.com/v1/market/all?isDetails=false", { signal: AbortSignal.timeout(8000), next: { revalidate: 300 } }),
-      fetch("https://api.binance.com/api/v3/ticker/price", { signal: AbortSignal.timeout(8000), next: { revalidate: 60 } }),
+      fetch(`${BINANCE_SPOT}/api/v3/ticker/price`, { signal: AbortSignal.timeout(8000), next: { revalidate: 60 } }),
       fetch("https://api.coinmarketcap.com/data-api/v3/cryptocurrency/listing?start=1&limit=500&sortBy=market_cap&sortType=desc&convert=USD&cryptoType=all&tagType=all&audited=false", { headers: BROWSER_HEADERS, signal: AbortSignal.timeout(12000), next: { revalidate: 300 } }),
     ]);
 

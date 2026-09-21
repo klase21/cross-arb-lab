@@ -11,6 +11,7 @@ import {
   type SquareSignal,
   type SquareStatus,
 } from "@/lib/square";
+import { BINANCE_BAPI, BINANCE_SPOT } from "@/lib/binance";
 
 export const dynamic = "force-dynamic";
 
@@ -23,9 +24,9 @@ const BROWSER_HEADERS = {
   referer: "https://www.binance.com/en/square/trending",
 };
 
-const SQUARE_LIST = "https://www.binance.com/bapi/composite/v3/friendly/pgc/content/article/list";
-const BINANCE_SPOT = "https://api.binance.com/api/v3/ticker/price";
-const BINANCE_KLINES = "https://api.binance.com/api/v3/klines";
+const SQUARE_LIST = `${BINANCE_BAPI}/bapi/composite/v3/friendly/pgc/content/article/list`;
+const BINANCE_SPOT_PRICE = `${BINANCE_SPOT}/api/v3/ticker/price`;
+const BINANCE_KLINES = `${BINANCE_SPOT}/api/v3/klines`;
 
 interface SquareVo {
   id?: number | string;
@@ -135,7 +136,7 @@ export async function GET() {
 
   const priceMap = new Map<string, number>();
   try {
-    const res = await fetch(BINANCE_SPOT, { signal: AbortSignal.timeout(10000) });
+    const res = await fetch(BINANCE_SPOT_PRICE, { signal: AbortSignal.timeout(10000) });
     if (res.ok) {
       const list = (await res.json()) as { symbol: string; price: string }[];
       for (const row of list) priceMap.set(row.symbol, Number.parseFloat(row.price));

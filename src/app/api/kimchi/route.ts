@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getUsdKrwRate } from "@/lib/fx";
+import { BINANCE_SPOT } from "@/lib/binance";
 import { evaluateUpbitUsdtRoundTrips } from "@/lib/stablecoin-arbitrage";
 
 export const dynamic = "force-dynamic";
@@ -348,7 +349,7 @@ async function getUpbitOrderbooks(markets: string[]): Promise<Map<string, { ask:
 async function getBinancePrices(): Promise<Map<string, number>> {
   const prices = new Map<string, number>();
   try {
-    const response = await fetch("https://api.binance.com/api/v3/ticker/price", { signal: AbortSignal.timeout(8_000) });
+    const response = await fetch(`${BINANCE_SPOT}/api/v3/ticker/price`, { signal: AbortSignal.timeout(8_000) });
     if (!response.ok) return prices;
     const data = await response.json() as { symbol: string; price: string }[];
     for (const entry of data ?? []) {
@@ -364,7 +365,7 @@ async function getBinancePrices(): Promise<Map<string, number>> {
 async function getBinanceBookTickers(): Promise<Map<string, { ask: number; bid: number }>> {
   const books = new Map<string, { ask: number; bid: number }>();
   try {
-    const response = await fetch("https://api.binance.com/api/v3/ticker/bookTicker", { signal: AbortSignal.timeout(8_000) });
+    const response = await fetch(`${BINANCE_SPOT}/api/v3/ticker/bookTicker`, { signal: AbortSignal.timeout(8_000) });
     if (!response.ok) return books;
     const data = await response.json() as { symbol: string; bidPrice: string; askPrice: string }[];
     for (const entry of data ?? []) {

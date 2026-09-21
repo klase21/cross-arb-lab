@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { binanceApr, squeezeRisk, type FutRow } from "@/lib/futures";
+import { BINANCE_FAPI } from "@/lib/binance";
 
 export const dynamic = "force-dynamic";
 
-const FAPI = "https://fapi.binance.com";
+const FAPI = BINANCE_FAPI;
 const UNIVERSE_SIZE = 25;
 const CACHE_TTL_MS = 2 * 60 * 1000;
 
