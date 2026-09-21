@@ -14,6 +14,8 @@ export interface AppSettings {
   dexThresholdPct: number;         // DEX arbitrage net spread %
   cexThresholdPct: number;         // CEX-to-CEX net spread %
   hybridThresholdPct: number;      // CEX→DEX→CEX net spread %
+  futFundingAprPct: number;        // |funding APR| % to trigger alert
+  futSqueezeScore: number;         // squeeze risk score to trigger alert
   notifyCooldownMin: number;       // per-coin cooldown
   telegramEnabled: boolean;
   telegramBotToken: string;
@@ -29,6 +31,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   dexThresholdPct: 1,
   cexThresholdPct: 0.8,
   hybridThresholdPct: 0.8,
+  futFundingAprPct: 50,
+  futSqueezeScore: 60,
   notifyCooldownMin: 10,
   telegramEnabled: false,
   telegramBotToken: "",
@@ -180,6 +184,14 @@ export default function SettingsView() {
           <div>
             <label className="block text-xs text-zinc-500 mb-1">{t("settings.hybridThreshold")} <strong>{s.hybridThresholdPct.toFixed(1)}%</strong></label>
             <input type="range" min={0} max={5} step={0.1} value={s.hybridThresholdPct} onChange={e => update({ hybridThresholdPct: Number(e.target.value) })} className="w-full accent-emerald-500" />
+          </div>
+          <div>
+            <label className="block text-xs text-zinc-500 mb-1">{t("settings.futFunding")} <strong>|{s.futFundingAprPct.toFixed(0)}|%</strong></label>
+            <input type="range" min={10} max={300} step={5} value={s.futFundingAprPct} onChange={e => update({ futFundingAprPct: Number(e.target.value) })} className="w-full accent-emerald-500" />
+          </div>
+          <div>
+            <label className="block text-xs text-zinc-500 mb-1">{t("settings.futSqueeze")} <strong>{s.futSqueezeScore.toFixed(0)}</strong></label>
+            <input type="range" min={20} max={100} step={5} value={s.futSqueezeScore} onChange={e => update({ futSqueezeScore: Number(e.target.value) })} className="w-full accent-emerald-500" />
           </div>
           <div>
             <label className="block text-xs text-zinc-500 mb-1">{t("settings.cooldown")} <strong>{s.notifyCooldownMin}{t("common.minute")}</strong></label>

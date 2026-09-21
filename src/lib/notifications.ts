@@ -51,6 +51,30 @@ export function notifyKimchi(coin: string, premiumPct: number, roundTripPct?: nu
   notifyTelegram(`<b>Kimchi Alert — ${coin}</b>\n${body}`);
 }
 
+export function notifyFutFunding(base: string, spreadApr: number, longVenue: string, shortVenue: string) {
+  const settings = loadSettings();
+  if (!settings.notifyEnabled) return;
+  if (Math.abs(spreadApr) < settings.futFundingAprPct) return;
+  const key = `futfund:${base}`;
+  if (!shouldNotify(key, settings.notifyCooldownMin)) return;
+  markSent(key);
+  const body = `$${base} 펀딩 스프레드 ${spreadApr >= 0 ? "+" : ""}${spreadApr.toFixed(1)}%/yr · L ${longVenue} / S ${shortVenue}`;
+  notifyBrowser(`Funding Arb — ${base}`, body, key);
+  void notifyTelegram(`<b>Funding Arb — ${base}</b>\n${body}`);
+}
+
+export function notifyFutSqueeze(base: string, side: string, score: number) {
+  const settings = loadSettings();
+  if (!settings.notifyEnabled) return;
+  if (score < settings.futSqueezeScore) return;
+  const key = `futsqz:${base}`;
+  if (!shouldNotify(key, settings.notifyCooldownMin)) return;
+  markSent(key);
+  const body = `$${base} ${side} 과밀 · 스퀴즈 위험 ${score}`;
+  notifyBrowser(`Squeeze Risk — ${base}`, body, key);
+  void notifyTelegram(`<b>Squeeze Risk — ${base}</b>\n${body}`);
+}
+
 export function notifyCex(coin: string, buyCex: string, sellCex: string, netPct: number, type: "cex" | "dex" | "hybrid") {
   const settings = loadSettings();
   if (!settings.notifyEnabled) return;

@@ -77,21 +77,19 @@ export default function SniperView() {
       const res = await fetch("/api/listing-sniper");
       if (res.ok) {
         const data = await res.json();
-        const prevLatest = newListings[0]?.detectedAt;
         setWaiting(Array.isArray(data.waiting) ? data.waiting : []);
         setNewListings(Array.isArray(data.newListings) ? data.newListings : []);
         setTracked(data.trackedUpbitMarkets ?? 0);
+        // fireAlert dedupes internally via lastAlertedAt ref + localStorage.
         if (alertEnabled && Array.isArray(data.newListings) && data.newListings.length > 0) {
-          if (!prevLatest || Date.parse(data.newListings[0].detectedAt) > Date.parse(prevLatest)) {
-            fireAlert(data.newListings);
-          }
+          fireAlert(data.newListings);
         }
       }
       setLastUpdated(new Date().toLocaleTimeString(lang === "ko" ? "ko-KR" : "en-US"));
     } catch {} finally {
       setLoading(false);
     }
-  }, [lang, alertEnabled, newListings, fireAlert]);
+  }, [lang, alertEnabled, fireAlert]);
 
   useEffect(() => {
     load();

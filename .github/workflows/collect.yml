@@ -1,0 +1,21 @@
+name: price-history-collect
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Trigger price collection
+        run: |
+          code=$(curl -s -o /tmp/collect.json -w "%{http_code}" "${APP_URL}/api/collect?key=${CRON_KEY}")
+          echo "HTTP $code"
+          head -c 500 /tmp/collect.json; echo
+          test "$code" = "200"
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_KEY: ${{ secrets.CRON_KEY }}

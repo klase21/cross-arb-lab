@@ -1,12 +1,10 @@
 "use client";
 
 import { useState, useEffect, use, useCallback } from "react";
-import { CHAIN_DEXES, type ChainId } from "@/lib/dex-config";
 import { LangProvider, useLang } from "@/lib/i18n";
 import { useDisplayCurrency } from "@/lib/use-currency";
-import { dexscreenerEmbedUrl, dexscreenerTokenUrl } from "@/lib/dexscreener";
-import { gmgnTokenUrl } from "@/lib/gmgn";
 import { scoreKimchi, riskColor, riskBarColor } from "@/lib/risk-scorer";
+import HistoryChart from "@/components/HistoryChart";
 
 interface KimchiItem {
   coin: string;
@@ -36,38 +34,12 @@ interface KimchiItem {
   };
 }
 
-const CHAIN_NAMES: Record<string, string> = {
-  ethereum: "Ethereum",
-  arbitrum: "Arbitrum",
-  polygon: "Polygon",
-  base: "Base",
-  optimism: "Optimism",
-  bsc: "BNB Chain",
-};
-
 function fmtKrw(n: number): string {
   return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function fmtUsd(n: number): string {
   return "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 });
-}
-
-// find a representative chain/token address for this coin symbol
-function findTokenChain(coin: string): { chain: ChainId; address: string } | null {
-  const upper = coin.toUpperCase();
-  // map common W- prefixes
-  const candidates = [upper, `W${upper}`, upper.replace(/^W/, "")];
-  for (const chain of CHAIN_DEXES) {
-    for (const cand of candidates) {
-      const tok = chain.tokens[cand];
-      if (tok) return { chain: chain.chain, address: tok.address };
-    }
-    // also try direct upper
-    const direct = chain.tokens[upper];
-    if (direct) return { chain: chain.chain, address: direct.address };
-  }
-  return null;
 }
 
 function KimchiDetailInner({ params }: { params: Promise<{ coin: string }> }) {
@@ -134,10 +106,6 @@ function KimchiDetailInner({ params }: { params: Promise<{ coin: string }> }) {
 
   const displayName = lang === "ko" ? item.nameKr : item.nameEn || item.nameKr;
   const premiumPositive = item.premiumPct >= 0;
-  const tokenChain = findTokenChain(coin);
-  const embedUrl = tokenChain ? dexscreenerEmbedUrl(tokenChain.chain, tokenChain.address) : null;
-  const dexUrl = tokenChain ? dexscreenerTokenUrl(tokenChain.chain, tokenChain.address) : null;
-  const gmgnUrl = tokenChain ? gmgnTokenUrl(tokenChain.chain, tokenChain.address) : null;
   const upbitUsd = item.upbitKrw / fxRate;
   const globalKrw = item.globalUsd * fxRate;
   const risk = (() => {
@@ -269,24 +237,8 @@ function KimchiDetailInner({ params }: { params: Promise<{ coin: string }> }) {
           )}
         </div>
 
-        {embedUrl && (
-          <div className="rounded-xl border border-zinc-800 p-6 mb-6">
-            <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-              <h2 className="text-base font-semibold">{lang === "ko" ? "덱스 차트" : "DEX Chart"} <span className="text-xs font-normal text-zinc-500 ml-2">{coin} / {tokenChain ? CHAIN_NAMES[tokenChain.chain] ?? tokenChain.chain : "—"}</span></h2>
-              <div className="flex items-center gap-3 text-xs">
-                {gmgnUrl && (
-                  <a href={gmgnUrl} target="_blank" rel="noopener noreferrer" className="text-amber-400 hover:underline" title={lang === "ko" ? "GMGN에서 홀더 분포·번들·허니팟 검증" : "Verify holders, bundles & honeypot on GMGN"}>
-                    {lang === "ko" ? "GMGN 보안 검증 →" : "GMGN safety check →"}
-                  </a>
-                )}
-                {dexUrl && <a href={dexUrl} target="_blank" rel="noopener noreferrer" className="text-emerald-400 hover:underline">Dexscreener →</a>}
-              </div>
-            </div>
-            <div className="rounded-lg overflow-hidden border border-zinc-800 bg-zinc-900" style={{ height: 400 }}>
-              <iframe src={embedUrl} style={{ width: "100%", height: "100%", border: 0 }} title={`Dexscreener ${coin}`} loading="lazy" />
-            </div>
-          </div>
-        )}
+        {/* DEX Chart + GMGN verification — UI unmounted (on-chain plan pending; code kept in lib/dexscreener.ts + lib/gmgn.ts). */}
+        <HistoryChart symbol={coin} />
 
         <div className="rounded-xl border border-zinc-800 p-6 mb-6">
           <h2 className="text-base font-semibold mb-3">{lang === "ko" ? "입출금 상태" : "Wallet Status"}</h2>

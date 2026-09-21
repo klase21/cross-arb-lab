@@ -3,12 +3,11 @@
 import { useState, useEffect } from "react";
 import KimchiView from "@/components/KimchiView";
 import DexArbitrageView from "@/components/DexArbitrageView";
-import DexCompareView from "@/components/DexCompareView";
 import SettingsView from "@/components/SettingsView";
-import CalculatorView from "@/components/CalculatorView";
-import SimulatorView from "@/components/SimulatorView";
 import CexCexView from "@/components/CexCexView";
-import TrendingView from "@/components/TrendingView";
+import SquareView from "@/components/SquareView";
+import TaView from "@/components/TaView";
+import FuturesView from "@/components/FuturesView";
 import SniperView from "@/components/SniperView";
 import { LangProvider, useLang } from "@/lib/i18n";
 
@@ -17,10 +16,9 @@ const TAB_DEFS = [
   { id: "arbitrage" as const, labelKey: "tab.arbitrage.label", titleKey: "tab.arbitrage.title", descKey: "tab.arbitrage.desc" },
   { id: "cex" as const, labelKey: "tab.cex.label", titleKey: "tab.cex.title", descKey: "tab.cex.desc" },
   { id: "sniper" as const, labelKey: "tab.sniper.label", titleKey: "tab.sniper.title", descKey: "tab.sniper.desc" },
-  { id: "compare" as const, labelKey: "tab.compare.label", titleKey: "tab.compare.title", descKey: "tab.compare.desc" },
-  { id: "trending" as const, labelKey: "tab.trending.label", titleKey: "tab.trending.title", descKey: "tab.trending.desc" },
-  { id: "calculator" as const, labelKey: "tab.calculator.label", titleKey: "tab.calculator.title", descKey: "tab.calculator.desc" },
-  { id: "simulator" as const, labelKey: "tab.simulator.label", titleKey: "tab.simulator.title", descKey: "tab.simulator.desc" },
+  { id: "square" as const, labelKey: "tab.square.label", titleKey: "tab.square.title", descKey: "tab.square.desc" },
+  { id: "ta" as const, labelKey: "tab.ta.label", titleKey: "tab.ta.title", descKey: "tab.ta.desc" },
+  { id: "futures" as const, labelKey: "tab.futures.label", titleKey: "tab.futures.title", descKey: "tab.futures.desc" },
   { id: "settings" as const, labelKey: "tab.settings.label", titleKey: "tab.settings.title", descKey: "tab.settings.desc" },
 ] as const;
 
@@ -31,8 +29,6 @@ function HomeInner() {
   const { t } = useLang();
 
   const TABS = TAB_DEFS.map(d => ({ id: d.id, label: t(d.labelKey), title: t(d.titleKey), desc: t(d.descKey) }));
-  const HIDDEN_TABS = new Set<TabId>(["calculator", "simulator"]);
-  const VISIBLE_TABS = TABS.filter(tabItem => !HIDDEN_TABS.has(tabItem.id));
 
   useEffect(() => {
     const initial = new URLSearchParams(window.location.search).get("tab") as TabId | null;
@@ -56,13 +52,16 @@ function HomeInner() {
           </div>
           <div className="-mx-4 md:mx-0 px-4 md:px-0 overflow-x-auto scrollbar-thin">
             <nav className="flex rounded-lg border border-zinc-700 overflow-hidden text-sm self-start w-max">
-              {VISIBLE_TABS.map(item => (
+              {TABS.map(item => (
                 <button
                   key={item.id}
                   onClick={() => switchTab(item.id)}
                   className={`px-3 md:px-4 py-2 transition-colors whitespace-nowrap text-xs md:text-sm ${tab === item.id ? "bg-emerald-600 text-white" : "bg-zinc-900 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"}`}
                 >
                   {item.label}
+                  {item.id === "square" && (
+                    <span className="ml-1 px-1 py-px rounded bg-violet-500/25 text-violet-200 text-[10px] font-bold align-middle">BETA</span>
+                  )}
                 </button>
               ))}
             </nav>
@@ -73,10 +72,9 @@ function HomeInner() {
         {tab === "arbitrage" && <DexArbitrageView />}
         {tab === "cex" && <CexCexView />}
         {tab === "sniper" && <SniperView />}
-        {tab === "compare" && <DexCompareView />}
-        {tab === "trending" && <TrendingView />}
-        {tab === "calculator" && <CalculatorView />}
-        {tab === "simulator" && <SimulatorView />}
+        {tab === "square" && <SquareView />}
+        {tab === "ta" && <TaView />}
+        {tab === "futures" && <FuturesView />}
         {tab === "settings" && <SettingsView />}
       </main>
     </div>
