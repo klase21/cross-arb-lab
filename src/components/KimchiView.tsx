@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePollingInterval } from "@/lib/use-polling";
 import { scoreKimchi, riskColor } from "@/lib/risk-scorer";
@@ -105,7 +105,10 @@ export default function KimchiView() {
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [minVolume, setMinVolume] = useState(0);
   const [history, setHistory] = useState<Record<string, { time: number; premium: number }[]>>({});
-  const [topMovers, setTopMovers] = useState<{ coin: string; delta: number }[]>([]);
+  // Shared DB history (Neon, identical on every browser) — preferred over local
+  // accumulation when a coin has >= 2 points; localStorage stays as fallback.
+  const [dbHistory, setDbHistory] = useState<Record<string, { time: number; premium: number }[]>>({});
+  const dbCoinsKey = useRef<string>("");
 
   useEffect(() => {
     try {
@@ -150,7 +153,7 @@ export default function KimchiView() {
           for (const item of data.items as KimchiItem[]) {
             notifyKimchi(item.coin, item.premiumPct, item.trip?.netProfitPct);
           }
-          // Update history (keep last 48 points, ~24h at 30min intervals)
+          // Update local fallback history (keep last 48 points, ~24h at 30min intervals)
           const now = Date.now();
           setHistory(previous => {
             const next = { ...previous };
@@ -163,20 +166,6 @@ export default function KimchiView() {
               }
             }
             try { localStorage.setItem("kimchiHistory", JSON.stringify(next)); } catch {}
-            // Compute top movers (1h delta)
-            const movers: { coin: string; delta: number }[] = [];
-            for (const [coin, points] of Object.entries(next)) {
-              if (points.length < 2) continue;
-              const recent = points[points.length - 1].premium;
-              // Find point ~1h ago
-              const targetTime = now - 60 * 60 * 1000;
-              let closest = points[0];
-              for (const point of points) if (Math.abs(point.time - targetTime) < Math.abs(closest.time - targetTime)) closest = point;
-              if (now - closest.time < 30 * 60 * 1000) continue; // need at least 30min history
-              movers.push({ coin, delta: recent - closest.premium });
-            }
-            movers.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
-            setTopMovers(movers.slice(0, 5));
             return next;
           });
         }
@@ -207,13 +196,66 @@ export default function KimchiView() {
     return () => clearInterval(interval);
   }, [load, intervalSec]);
 
+  // Shared history from Neon (one call for all coins, refreshed every 30min).
+  useEffect(() => {
+    let cancelled = false;
+    const fetchDb = async () => {
+      const coins = items.map(i => i.coin).filter(c => /^[A-Z0-9]{2,12}$/.test(c));
+      const key = coins.slice().sort().join(",");
+      if (!coins.length || key === dbCoinsKey.current) return;
+      dbCoinsKey.current = key;
+      try {
+        const res = await fetch(`/api/history/bulk?coins=${encodeURIComponent(coins.join(","))}&hours=24`);
+        if (res.status === 503) return; // DB not configured — local fallback stays
+        if (!res.ok || cancelled) return;
+        const data = await res.json() as { coins?: Record<string, { t: number; pct: number }[]> };
+        if (cancelled || !data.coins) return;
+        const next: Record<string, { time: number; premium: number }[]> = {};
+        for (const [coin, pts] of Object.entries(data.coins)) {
+          if (pts.length >= 2) next[coin] = pts.map(p => ({ time: p.t, premium: p.pct }));
+        }
+        setDbHistory(next);
+      } catch {}
+    };
+    const kickoff = setTimeout(() => { void fetchDb(); }, 0);
+    const timer = setInterval(() => { dbCoinsKey.current = ""; void fetchDb(); }, 30 * 60 * 1000);
+    return () => { cancelled = true; clearTimeout(kickoff); clearInterval(timer); };
+  }, [items]);
+
+  const mergedHistory = useMemo(() => {
+    const merged = { ...history };
+    for (const [coin, pts] of Object.entries(dbHistory)) {
+      if (pts.length >= 2) merged[coin] = pts;
+    }
+    return merged;
+  }, [history, dbHistory]);
+
+  const topMovers = useMemo(() => {
+    // Anchor to the newest data point (not wall clock) so DB snapshots work too.
+    const times = Object.values(mergedHistory).flatMap(points => points.map(p => p.time));
+    if (times.length === 0) return [];
+    const now = Math.max(...times);
+    const movers: { coin: string; delta: number }[] = [];
+    for (const [coin, points] of Object.entries(mergedHistory)) {
+      if (points.length < 2) continue;
+      const recent = points[points.length - 1].premium;
+      const targetTime = now - 60 * 60 * 1000;
+      let closest = points[0];
+      for (const point of points) if (Math.abs(point.time - targetTime) < Math.abs(closest.time - targetTime)) closest = point;
+      if (now - closest.time < 30 * 60 * 1000) continue; // need at least 30min history
+      movers.push({ coin, delta: recent - closest.premium });
+    }
+    movers.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+    return movers.slice(0, 5);
+  }, [mergedHistory]);
+
   const getKimchiRisk = (item: KimchiItem) => {
     const wallet = walletMap.get(item.coin);
     const delta1h = topMovers.find(m => m.coin === item.coin)?.delta;
     // history-based fallback if not in topMovers: compute from last 2 points
     let histDelta: number | undefined = delta1h;
     if (histDelta === undefined) {
-      const hist = history[item.coin];
+      const hist = mergedHistory[item.coin];
       if (hist && hist.length >= 2) histDelta = hist[hist.length - 1].premium - hist[0].premium;
     }
     const spreadBufferPct = item.trip ? -item.trip.premiumGapToBreakevenPct : undefined;
@@ -234,7 +276,7 @@ export default function KimchiView() {
   const getDelta = (item: KimchiItem): number | undefined => {
     const d = topMovers.find(m => m.coin === item.coin)?.delta;
     if (d !== undefined) return d;
-    const hist = history[item.coin];
+    const hist = mergedHistory[item.coin];
     if (hist && hist.length >= 2) return hist[hist.length - 1].premium - hist[0].premium;
     return undefined;
   };
@@ -317,7 +359,7 @@ export default function KimchiView() {
         if (Number.isNaN(diff)) return 0;
         return sortDir === "desc" ? diff : -diff;
       });
-  }, [items, search, verifiedOnly, reverseOnly, hideAlpha, favorites, sortKey, sortDir, walletMap, history, topMovers]);
+  }, [items, search, verifiedOnly, reverseOnly, hideAlpha, favorites, sortKey, sortDir, walletMap, mergedHistory, topMovers]);
 
   return (
     <>
@@ -490,7 +532,7 @@ export default function KimchiView() {
                     ) : "-"}
                   </td>
                   <td className="text-center px-2 py-2.5">
-                    <Sparkline data={(history[item.coin] ?? []).map(point => point.premium)} zScore={computeZScore(history[item.coin])} />
+                    <Sparkline data={(mergedHistory[item.coin] ?? []).map(point => point.premium)} zScore={computeZScore(mergedHistory[item.coin])} />
                   </td>
                   <td className="text-right px-4 py-2.5 font-mono text-zinc-200" title={item.upbitAsk ? (lang === "ko" ? `매수 Ask: ${formatKrw(item.upbitAsk)} / 매도 Bid: ${formatKrw(item.upbitBid ?? item.upbitKrw)}` : `Ask: ${formatKrw(item.upbitAsk)} / Bid: ${formatKrw(item.upbitBid ?? item.upbitKrw)}`) : undefined}>
                     {formatKrw(item.upbitKrw)}
@@ -652,7 +694,7 @@ export default function KimchiView() {
               </div>
               <div className="mt-3 pt-3 border-t border-zinc-800 flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Sparkline data={(history[item.coin] ?? []).map(p => p.premium)} zScore={computeZScore(history[item.coin])} />
+                  <Sparkline data={(mergedHistory[item.coin] ?? []).map(p => p.premium)} zScore={computeZScore(mergedHistory[item.coin])} />
                   {trip && <span className={`text-xs font-mono ${trip.netProfitKrw >= 0 ? "text-emerald-400" : "text-red-400"}`}>{trip.netProfitKrw >= 0 ? "+" : ""}{displayCurrency === "USD" ? `$${(Math.abs(trip.netProfitKrw)/(fxRate||1350)).toFixed(0)}` : `${Math.round(trip.netProfitKrw).toLocaleString()} KRW`}</span>}
                 </div>
                 <Link href={`/kimchi/${encodeURIComponent(item.coin)}`} className="text-xs text-zinc-500 border border-zinc-700 rounded-full px-3 py-1">{lang === "ko" ? "상세" : "Detail"} →</Link>
