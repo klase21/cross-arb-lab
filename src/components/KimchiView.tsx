@@ -12,7 +12,7 @@ interface KimchiItem {
   nameKr: string;
   nameEn: string;
   binanceSymbol?: string;
-  binanceSource?: "spot" | "alpha";
+  binanceSource?: "spot" | "alpha" | "gate";
   binanceOnCmc?: boolean;
   upbitKrw: number;
   upbitAsk?: number;
@@ -335,7 +335,7 @@ export default function KimchiView() {
       .filter(item => {
         if (verifiedOnly && !item.verified) return false;
         if (reverseOnly && item.premiumPct > -0.5) return false;
-        if (hideAlpha && item.binanceSource === "alpha") return false;
+        if (hideAlpha && item.binanceSource !== undefined && item.binanceSource !== "spot") return false;
         if (minVolume > 0 && (item.volumeKrw ?? 0) < minVolume) return false;
         // Hide paused / withdraw_only (입출금 제한) — as requested
         const w = walletMap.get(item.coin);
@@ -427,7 +427,7 @@ export default function KimchiView() {
             </button>
             {t("kimchi.verifiedOnly")}
           </label>
-          <label className="flex items-center gap-2 text-xs cursor-pointer select-none" title={lang === "ko" ? "바이낸스 현물 미상장(Alpha) 코인 숨기기" : "Hide Binance Alpha (pre-spot) coins"}>
+            <label className="flex items-center gap-2 text-xs cursor-pointer select-none" title={lang === "ko" ? "바이낸스 현물 미상장(Alpha·Gate 기준가) 코인 숨기기" : "Hide non-spot global quotes (Alpha, Gate)"}>
             <button onClick={() => setHideAlpha(v => !v)} className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${hideAlpha ? "bg-cyan-600" : "bg-zinc-700"}`}>
               <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${hideAlpha ? "translate-x-[18px]" : "translate-x-1"}`} />
             </button>
@@ -515,9 +515,14 @@ export default function KimchiView() {
                       const displayName = lang === "ko" ? item.nameKr : (item.nameEn || item.nameKr);
                       return displayName !== item.coin ? <Link href={`/kimchi/${encodeURIComponent(item.coin)}`} className="ml-2 text-xs text-zinc-500 hover:text-emerald-400 hover:underline">{displayName}</Link> : null;
                     })()}
-                    {item.binanceSymbol && (
+                    {item.binanceSymbol && item.binanceSource !== "gate" && (
                       <p className="text-[10px] text-cyan-400/80 font-mono mt-0.5" title="Binance uses a different ticker for this coin (resolved via CoinMarketCap)">
                         Binance{item.binanceSource === "alpha" ? " Alpha" : ""}: {item.binanceSymbol}
+                      </p>
+                    )}
+                    {item.binanceSymbol && item.binanceSource === "gate" && (
+                      <p className="text-[10px] text-cyan-400/80 font-mono mt-0.5" title="Global price from Gate.io orderbook (no Binance spot listing)">
+                        Gate.io: {item.binanceSymbol}
                       </p>
                     )}
                     {!item.binanceSymbol && item.binanceSource === "alpha" && (

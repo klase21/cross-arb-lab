@@ -11,7 +11,7 @@ interface KimchiItem {
   nameKr: string;
   nameEn: string;
   binanceSymbol?: string;
-  binanceSource?: "spot" | "alpha";
+  binanceSource?: "spot" | "alpha" | "gate";
   binanceOnCmc?: boolean;
   upbitKrw: number;
   upbitAsk?: number;
