@@ -52,7 +52,7 @@ const dictionaries: Record<Lang, Dict> = {
     "common.noData": "데이터 없음",
     "common.minute": "분",
     // Kimchi
-    "kimchi.subtitle": "업비트 전체 KRW 마켓 vs 바이낸스 글로벌 시세",
+    "kimchi.subtitle": "업비트 전체 KRW 마켓 vs 글로벌 시세 (Binance·Gate·Alpha 검증가)",
     "kimchi.trending": "급등락 Top 5 (1시간 프리미엄 변동)",
     "kimchi.searchPlaceholder": "코인 검색 (심볼 또는 한글명)…",
     "kimchi.verifiedOnly": "CMC 검증 통과만",
@@ -305,7 +305,7 @@ const dictionaries: Record<Lang, Dict> = {
     "common.fx": "FX",
     "common.loading": "Loading…",
     "common.noData": "No data",
-    "kimchi.subtitle": "All Upbit KRW pairs vs Binance global price",
+    "kimchi.subtitle": "All Upbit KRW pairs vs verified global quotes (Binance · Gate · Alpha)",
     "kimchi.trending": "Top Movers (1h premium change)",
     "kimchi.searchPlaceholder": "Search coin (symbol or name)…",
     "kimchi.verifiedOnly": "Verified only",
