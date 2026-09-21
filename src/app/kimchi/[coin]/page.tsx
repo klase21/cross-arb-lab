@@ -346,6 +346,11 @@ function KimchiDetailInner({ params }: { params: Promise<{ coin: string }> }) {
               ? <span className="text-zinc-600">-</span>
               : <span className={ok ? "text-emerald-400" : "text-red-400"}>{ok ? "●" : "○"}</span>;
             const notice = upbitNets.map(n => n.message).find(m => m) ?? wallet?.message ?? "";
+            const anyDirect = rows.some(row =>
+              row.upDep === true && row.upWd === true && !!row.gate && row.gate.depositOk && row.gate.withdrawOk,
+            );
+            const upOnly = rows.filter(r => r.upDep !== null && !r.gate).length;
+            const gateOnly = rows.filter(r => r.upDep === null && r.gate).length;
             return (
               <div>
                 <div className="flex items-center gap-2 flex-wrap mb-3">
@@ -359,6 +364,18 @@ function KimchiDetailInner({ params }: { params: Promise<{ coin: string }> }) {
                     <span className="text-xs text-zinc-600">{lang === "ko" ? "조회 불가" : "Unavailable"}</span>
                   )}
                 </div>
+                {rows.length > 0 && !anyDirect && (
+                  <p className="px-3 py-2 rounded-lg bg-red-950/40 border border-red-800/60 text-red-300 text-xs font-bold mb-3">
+                    ⛔ {lang === "ko" ? "직접 전송 불가 — 양쪽이 열린 공통 네트워크가 없어 차익 실행이 안 됩니다" : "Direct transfer impossible — no commonly open network, arb not executable"}
+                    {(upOnly > 0 || gateOnly > 0) && (
+                      <span className="block mt-0.5 font-normal text-red-300/70 text-[11px]">
+                        {lang === "ko"
+                          ? `Upbit 전용 ${upOnly}개 · Gate 전용 ${gateOnly}개`
+                          : `${upOnly} Upbit-only · ${gateOnly} Gate-only`}
+                      </span>
+                    )}
+                  </p>
+                )}
                 {rows.length > 0 && (
                   <table className="w-full text-xs">
                     <thead>
