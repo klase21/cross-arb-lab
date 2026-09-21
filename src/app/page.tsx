@@ -8,6 +8,7 @@ import CexCexView from "@/components/CexCexView";
 import SquareView from "@/components/SquareView";
 import TaView from "@/components/TaView";
 import FuturesView from "@/components/FuturesView";
+import PaperView from "@/components/PaperView";
 import SniperView from "@/components/SniperView";
 import { LangProvider, useLang } from "@/lib/i18n";
 
@@ -19,6 +20,7 @@ const TAB_DEFS = [
   { id: "square" as const, labelKey: "tab.square.label", titleKey: "tab.square.title", descKey: "tab.square.desc" },
   { id: "ta" as const, labelKey: "tab.ta.label", titleKey: "tab.ta.title", descKey: "tab.ta.desc" },
   { id: "futures" as const, labelKey: "tab.futures.label", titleKey: "tab.futures.title", descKey: "tab.futures.desc" },
+  { id: "paper" as const, labelKey: "tab.paper.label", titleKey: "tab.paper.title", descKey: "tab.paper.desc" },
   { id: "settings" as const, labelKey: "tab.settings.label", titleKey: "tab.settings.title", descKey: "tab.settings.desc" },
 ] as const;
 
@@ -75,6 +77,7 @@ function HomeInner() {
         {tab === "square" && <SquareView />}
         {tab === "ta" && <TaView />}
         {tab === "futures" && <FuturesView />}
+        {tab === "paper" && <PaperView />}
         {tab === "settings" && <SettingsView />}
       </main>
     </div>

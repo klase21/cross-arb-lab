@@ -6,6 +6,7 @@ import { usePollingInterval } from "@/lib/use-polling";
 import { scoreKimchi, riskColor } from "@/lib/risk-scorer";
 import { useLang } from "@/lib/i18n";
 import { useDisplayCurrency } from "@/lib/use-currency";
+import { stageDraft } from "@/lib/paper";
 
 interface KimchiItem {
   coin: string;
@@ -511,6 +512,13 @@ export default function KimchiView() {
                     <Link href={`/kimchi/${encodeURIComponent(item.coin)}`} className="font-semibold hover:text-emerald-400 hover:underline">
                       {item.coin}
                     </Link>
+                    <button
+                      onClick={() => { stageDraft(item.coin); window.location.href = "/?tab=paper"; }}
+                      className="ml-1.5 px-1.5 py-px rounded border border-zinc-700 text-[10px] text-zinc-500 hover:text-emerald-300 hover:border-emerald-600 align-middle"
+                      title={t("paper.quickTrade")}
+                    >
+                      🧪
+                    </button>
                     {(() => {
                       const displayName = lang === "ko" ? item.nameKr : (item.nameEn || item.nameKr);
                       return displayName !== item.coin ? <Link href={`/kimchi/${encodeURIComponent(item.coin)}`} className="ml-2 text-xs text-zinc-500 hover:text-emerald-400 hover:underline">{displayName}</Link> : null;

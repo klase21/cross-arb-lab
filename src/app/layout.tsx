@@ -13,8 +13,12 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Cross Arb Lab",
-  description: "Kimchi premium tracker and cross-chain DEX arbitrage scanner",
+  title: "KimpRadar",
+  description: "Kimchi premium tracker, cross-exchange arbitrage scanner, futures and signal tracking",
+  manifest: "/manifest.webmanifest",
+  themeColor: "#09090b",
+  appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: "KimpRadar" },
+  icons: { icon: "/icon.svg", apple: "/icon.svg" },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

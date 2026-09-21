@@ -1,0 +1,15 @@
+{
+  "name": "KimpRadar — Kimchi Premium & Arb Scanner",
+  "short_name": "KimpRadar",
+  "description": "Upbit vs global kimchi premium, CEX/DEX arbitrage, futures and signal tracking.",
+  "start_url": "/?tab=kimchi",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#09090b",
+  "theme_color": "#09090b",
+  "lang": "ko",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/favicon.ico", "sizes": "48x48", "type": "image/x-icon" }
+  ]
+}
