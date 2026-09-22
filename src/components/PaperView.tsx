@@ -194,14 +194,64 @@ export default function PaperView() {
     return map;
   }, [items]);
 
+  // Binance direct fallback for non-KRW coins (e.g. NIL): vision is CORS-open.
+  // Covers the ticket symbol plus any open Binance positions missing from kimchi.
+  const [extMap, setExtMap] = useState<Record<string, { bid: number; ask: number }>>({});
+  useEffect(() => {
+    let cancelled = false;
+    const syms = new Set<string>();
+    const ticket = symbol.trim().toUpperCase();
+    if (/^[A-Z0-9]{2,12}$/.test(ticket) && !byCoin.has(ticket)) syms.add(ticket);
+    for (const p of account?.positions ?? []) {
+      if (p.venue === "binance" && !byCoin.has(p.coin.toUpperCase())) syms.add(p.coin.toUpperCase());
+    }
+    if (syms.size === 0) return;
+    const kickoff = setTimeout(async () => {
+      try {
+        const list = [...syms].map(s => `"${s}USDT"`).join(",");
+        const res = await fetch(`https://data-api.binance.vision/api/v3/ticker/bookTicker?symbols=[${list}]`);
+        if (!res.ok || cancelled) return;
+        const data = (await res.json()) as { symbol: string; bidPrice: string; askPrice: string }[];
+        const next: Record<string, { bid: number; ask: number }> = {};
+        for (const d of Array.isArray(data) ? data : []) {
+          const base = d.symbol.replace(/USDT$/, "");
+          const bid = Number.parseFloat(d.bidPrice);
+          const ask = Number.parseFloat(d.askPrice);
+          if (base && bid > 0 && ask > 0) next[base] = { bid, ask };
+        }
+        if (!cancelled) setExtMap(prev => ({ ...prev, ...next }));
+      } catch {}
+    }, 300);
+    return () => { cancelled = true; clearTimeout(kickoff); };
+  }, [symbol, byCoin, account]);
+
   const quote: PaperQuote | null = useMemo(() => {
-    return buildQuote(byCoin.get(symbol.trim().toUpperCase()), venue, fx);
-  }, [byCoin, symbol, venue, fx]);
+    const sym = symbol.trim().toUpperCase();
+    const base = buildQuote(byCoin.get(sym), venue, fx);
+    if (base) return base;
+    if (venue !== "binance") return null;
+    const q = extMap[sym];
+    return q ? { venue, coin: sym, bidUsd: q.bid, askUsd: q.ask } : null;
+  }, [byCoin, symbol, venue, fx, extMap]);
 
   const pairBuyVenue: PaperVenue = pairDir === "u2b" ? "upbit" : "binance";
   const pairSellVenue: PaperVenue = pairDir === "u2b" ? "binance" : "upbit";
-  const pairBuyQ = useMemo(() => buildQuote(byCoin.get(symbol.trim().toUpperCase()), pairBuyVenue, fx), [byCoin, symbol, pairBuyVenue, fx]);
-  const pairSellQ = useMemo(() => buildQuote(byCoin.get(symbol.trim().toUpperCase()), pairSellVenue, fx), [byCoin, symbol, pairSellVenue, fx]);
+  const pairBuyQ = useMemo(() => {
+    const sym = symbol.trim().toUpperCase();
+    const base = buildQuote(byCoin.get(sym), pairBuyVenue, fx);
+    if (base) return base;
+    if (pairBuyVenue !== "binance") return null;
+    const q = extMap[sym];
+    return q ? { venue: pairBuyVenue, coin: sym, bidUsd: q.bid, askUsd: q.ask } : null;
+  }, [byCoin, symbol, pairBuyVenue, fx, extMap]);
+  const pairSellQ = useMemo(() => {
+    const sym = symbol.trim().toUpperCase();
+    const base = buildQuote(byCoin.get(sym), pairSellVenue, fx);
+    if (base) return base;
+    if (pairSellVenue !== "binance") return null;
+    const q = extMap[sym];
+    return q ? { venue: pairSellVenue, coin: sym, bidUsd: q.bid, askUsd: q.ask } : null;
+  }, [byCoin, symbol, pairSellVenue, fx, extMap]);
   const pairNotional = Number.parseFloat(pairNotionalInput);
   const pairQty = pairBuyQ && Number.isFinite(pairNotional) && pairNotional > 0 ? pairNotional / pairBuyQ.askUsd : 0;
   const pairPreview = useMemo(() => {
@@ -227,15 +277,22 @@ export default function PaperView() {
   };
 
   const mark = useCallback((v: PaperVenue, coin: string): number | null => {
-    const item = byCoin.get(coin.toUpperCase());
-    if (!item) return null;
+    const sym = coin.trim().toUpperCase();
+    const item = byCoin.get(sym);
+    if (!item) {
+      if (v === "binance") {
+        const q = extMap[sym];
+        return q && q.ask > 0 ? q.ask : null;
+      }
+      return null;
+    }
     if (v === "upbit") {
       const bid = (item.upbitBid ?? item.upbitKrw) / fx;
       return bid > 0 ? bid : null;
     }
     const ask = item.globalAsk ?? item.globalUsd;
     return ask > 0 ? ask : null;
-  }, [byCoin, fx]);
+  }, [byCoin, fx, extMap]);
 
   const valuation = useMemo(() => (account ? valuate(account, mark, fundMark) : null), [account, mark, fundMark]);
 
@@ -458,6 +515,7 @@ export default function PaperView() {
         <p className="text-[11px] text-zinc-500">
           {t("paper.estimate")}: {fmtUsd(estGross)} + {t("paper.fee")} {fmtUsd(estFee)}
           {quote && <span className="ml-2 text-zinc-600">{quote.coin} @ {quote.venue}</span>}
+          {!quote && venue === "upbit" && symbol.trim() && <span className="ml-2 text-amber-300">{t("paper.onlyBinance")}</span>}
           {msg && <span className="ml-2 text-amber-300">{msg}</span>}
         </p>
       </section>

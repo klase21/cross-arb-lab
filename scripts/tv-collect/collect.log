@@ -1,0 +1,15 @@
+
+> arb-scanner@0.1.0 collect:tv
+> node scripts/tv-collect/collect.mjs
+
+{"scraped":23,"inserted":8,"stScraped":120,"stInserted":30,"ms":57339}
+
+> arb-scanner@0.1.0 collect:tv
+> node scripts/tv-collect/collect.mjs
+
+{"scraped":23,"inserted":2,"stScraped":120,"stInserted":30,"ms":57976}
+
+> arb-scanner@0.1.0 collect:tv
+> node scripts/tv-collect/collect.mjs
+
+{"scraped":23,"inserted":6,"stScraped":120,"stInserted":27,"ms":58478}
