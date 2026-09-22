@@ -43,3 +43,6 @@ next-env.d.ts
 
 .vercel
 .neon
+
+# collector scheduler logs
+scripts/*/collect.log
