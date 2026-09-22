@@ -33,6 +33,7 @@ interface SquareVo {
   id?: number | string;
   authorName?: string;
   authorIsVerified?: boolean;
+  squareAuthorId?: string | null;
   title?: string | null;
   content?: string | null;
   coinPairList?: string[] | null;
@@ -54,6 +55,7 @@ function parseVo(v: SquareVo): RawSquarePost {
     id: String(v.id ?? ""),
     author: v.authorName ?? "unknown",
     verified: v.authorIsVerified === true,
+    squareAuthorId: v.squareAuthorId ?? null,
     title: v.title ?? "",
     content: v.content ?? "",
     coinPairs: Array.isArray(v.coinPairList) ? v.coinPairList : [],
@@ -131,6 +133,7 @@ export async function GET() {
       postId: post.id,
       author: post.author,
       authorVerified: post.verified,
+      authorId: post.squareAuthorId ?? null,
       asset,
       symbol: `${asset}USDT`,
       side,
@@ -256,10 +259,56 @@ export async function GET() {
   signals.sort((a, b) => b.views - a.views);
 
   const traders = aggregateTraders(signals);
+
+  // Author enrichment: follower counts for the most active traders.
+  const authors: Record<string, { followers: number | null; posts: number | null }> = {};
+  try {
+    const byAuthor = new Map<string, string>();
+    for (const s of signals) {
+      if (s.authorId && !byAuthor.has(s.author)) byAuthor.set(s.author, s.authorId);
+    }
+    const top = traders.filter(t => byAuthor.has(t.author)).slice(0, 12);
+    const BATCH = 4;
+    for (let i = 0; i < top.length; i += BATCH) {
+      const results = await Promise.all(
+        top.slice(i, i + BATCH).map(async t => {
+          try {
+            const res = await fetch(`${BINANCE_BAPI}/bapi/composite/v3/friendly/pgc/user/client`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "User-Agent": BROWSER_HEADERS["user-agent"], Referer: "https://www.binance.com/en/square/trending" },
+              body: JSON.stringify({ squareUid: byAuthor.get(t.author), getFollowCount: true }),
+              signal: AbortSignal.timeout(8000),
+            });
+            if (!res.ok) return null;
+            const data = (await res.json()) as { data?: { totalFollowerCount?: number; totalListedPostCount?: number } };
+            return {
+              author: t.author,
+              followers: typeof data.data?.totalFollowerCount === "number" ? data.data.totalFollowerCount : null,
+              posts: typeof data.data?.totalListedPostCount === "number" ? data.data.totalListedPostCount : null,
+            };
+          } catch {
+            return null;
+          }
+        }),
+      );
+      for (const r of results) {
+        if (r) {
+          authors[`square:${r.author}`] = { followers: r.followers, posts: r.posts };
+          const trader = traders.find(x => x.author === r.author);
+          if (trader) {
+            trader.followers = r.followers;
+            trader.totalPosts = r.posts;
+          }
+        }
+      }
+    }
+  } catch {}
+
   const payload = {
     postsScanned: posts.length,
     signals,
     traders,
+    authors,
     timestamp: new Date().toISOString(),
   };
   cache = { at: now, data: payload };

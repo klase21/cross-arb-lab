@@ -15,6 +15,7 @@ export interface SquareSignal {
   postId: string;
   author: string;
   authorVerified: boolean;
+  authorId?: string | null;
   asset: string;
   symbol: string;
   side: SquareSide;
@@ -47,12 +48,15 @@ export interface SquareTrader {
   avgRoi: number;
   trustScore: number;
   withStopPct: number;
+  followers?: number | null;
+  totalPosts?: number | null;
 }
 
 export interface RawSquarePost {
   id: string;
   author: string;
   verified: boolean;
+  squareAuthorId?: string | null;
   title: string;
   content: string;
   coinPairs: string[];

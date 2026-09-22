@@ -42,6 +42,14 @@ interface SquareTrader {
   avgRoi: number;
   trustScore: number;
   withStopPct: number;
+  followers?: number | null;
+}
+
+function fmtFollowers(n: number | null | undefined): string {
+  if (n === null || n === undefined || !Number.isFinite(n)) return "-";
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return `${n}`;
 }
 
 type StatusFilter = "all" | "live" | "open" | "closed";
@@ -87,6 +95,7 @@ export default function SquareView() {
   const [confF, setConfF] = useState<ConfFilter>("all");
   const [sourceF, setSourceF] = useState<SourceFilter>("all");
   const [showDetail, setShowDetail] = useState(false);
+  const [authors, setAuthors] = useState<Record<string, { followers: number | null }>>({});
   const [sort, setSort] = useState<SortKey>("roi");
   const [fng, setFng] = useState<{ value: number; label: string } | null>(null);
   const [whales, setWhales] = useState<{ base: string; netUsd: number; bias: string; prints: number }[]>([]);
@@ -112,6 +121,7 @@ export default function SquareView() {
         const data = await sqRes.json();
         if (Array.isArray(data.signals)) merged.push(...data.signals);
         scannedTotal += data.postsScanned ?? 0;
+        if (data.authors && typeof data.authors === "object") setAuthors(data.authors);
       }
       if (tvRes?.ok) {
         const data = await tvRes.json();
@@ -190,9 +200,11 @@ export default function SquareView() {
       const withStopPct = g.signals.length > 0 ? (withStop / g.signals.length) * 100 : 0;
       const author = key.replace(/^(square|tv|st):/, "");
       const source = (key.startsWith("tv:") ? "tv" : key.startsWith("st:") ? "st" : "square") as "square" | "tv" | "st";
+      const followers = source === "square" ? (authors[key]?.followers ?? null) : null;
       out.push({
         author,
         source,
+        followers,
         verified: g.verified,
         calls: g.signals.length,
         wins,
@@ -204,7 +216,7 @@ export default function SquareView() {
       });
     }
     return out.sort((a, b) => b.trustScore - a.trustScore || b.calls - a.calls);
-  }, [filtered]);
+  }, [filtered, authors]);
 
   const stats = useMemo(() => {
     const withClosed = traders.filter(x => x.wins + x.losses > 0);
@@ -266,6 +278,7 @@ export default function SquareView() {
                   <th className="px-3 py-2 text-right">W-L</th>
                   <th className="px-3 py-2 text-right">{t("square.winRate")}</th>
                   <th className="px-3 py-2 text-right">{t("square.avgRoi")}</th>
+                  <th className="px-3 py-2 text-right">{t("square.followers")}</th>
                   <th className="px-3 py-2 w-40">{t("square.trust")}</th>
                 </tr>
               </thead>
@@ -283,6 +296,7 @@ export default function SquareView() {
                     <td className={`px-3 py-2 text-right font-medium ${x.avgRoi >= 0 ? "text-emerald-400" : "text-red-400"}`}>
                       {x.avgRoi >= 0 ? "+" : ""}{x.avgRoi.toFixed(1)}%
                     </td>
+                    <td className="px-3 py-2 text-right text-zinc-300">{fmtFollowers(x.followers)}</td>
                     <td className="px-3 py-2">
                       <div className="flex items-center gap-2">
                         <div className="flex-1 h-1.5 rounded bg-zinc-800 overflow-hidden">
