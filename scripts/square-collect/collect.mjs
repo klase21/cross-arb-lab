@@ -1,0 +1,119 @@
+// Binance Square collector (plain fetch, no browser needed).
+// Scrapes trending + latest feeds and upserts into Neon `square_posts`.
+// Usage: npm run collect:square   (needs DATABASE_URL in .env)
+// Schedule: Windows Task Scheduler every 10 min (KimpRadar-Square-Collect).
+
+import { neon } from "@neondatabase/serverless";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+function loadEnv() {
+  try {
+    const envPath = path.join(__dirname, "..", "..", ".env");
+    const raw = fs.readFileSync(envPath, "utf-8");
+    for (const line of raw.split(/\r?\n/)) {
+      const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/);
+      if (!m) continue;
+      let v = m[2];
+      if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) v = v.slice(1, -1);
+      if (!(m[1] in process.env)) process.env[m[1]] = v;
+    }
+  } catch {}
+}
+
+const HEADERS = {
+  Accept: "application/json",
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+  Referer: "https://www.binance.com/en/square/trending",
+};
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function fetchPage(type, pageIndex) {
+  const url = `https://www.binance.com/bapi/composite/v3/friendly/pgc/content/article/list?pageIndex=${pageIndex}&pageSize=20&type=${type}`;
+  const res = await fetch(url, { headers: HEADERS, signal: AbortSignal.timeout(15000) });
+  if (!res.ok) throw new Error(`square list ${res.status}`);
+  const data = await res.json();
+  return data?.data?.vos ?? [];
+}
+
+function toMs(date) {
+  if (!date) return Date.now();
+  return date < 1_000_000_000_000 ? date * 1000 : date;
+}
+
+async function ensureTable(sql) {
+  await sql`
+    CREATE TABLE IF NOT EXISTS square_posts (
+      id TEXT PRIMARY KEY,
+      author TEXT NOT NULL DEFAULT '',
+      verified BOOLEAN NOT NULL DEFAULT FALSE,
+      square_author_id TEXT,
+      title TEXT NOT NULL DEFAULT '',
+      content TEXT NOT NULL DEFAULT '',
+      coin_pairs TEXT[] NOT NULL DEFAULT '{}',
+      hashtags TEXT[] NOT NULL DEFAULT '{}',
+      views INTEGER NOT NULL DEFAULT 0,
+      likes INTEGER NOT NULL DEFAULT 0,
+      post_ms BIGINT NOT NULL DEFAULT 0,
+      url TEXT NOT NULL DEFAULT '',
+      collected_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_square_posts_collected ON square_posts (collected_at DESC)`;
+}
+
+(async () => {
+  loadEnv();
+  if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL missing (.env)");
+  const started = Date.now();
+  const sql = neon(process.env.DATABASE_URL);
+  await ensureTable(sql);
+
+  // Trending (type=1, ~24h) + Latest (type=2, ~42h). 0.5s courtesy gap.
+  const jobs = [];
+  for (let p = 1; p <= 6; p++) jobs.push([1, p]);
+  for (let p = 1; p <= 6; p++) jobs.push([2, p]);
+  const seen = new Map();
+  for (const [type, page] of jobs) {
+    try {
+      const vos = await fetchPage(type, page);
+      if (vos.length === 0) break;
+      for (const v of vos) {
+        if (!v || v.id === undefined || v.id === null) continue;
+        seen.set(String(v.id), v);
+      }
+    } catch (e) {
+      console.error("page fail", type, page, e.message);
+    }
+    await sleep(500);
+  }
+
+  let inserted = 0;
+  let updated = 0;
+  for (const v of seen.values()) {
+    const id = String(v.id);
+    const pairs = Array.isArray(v.coinPairList) ? v.coinPairList.map(String).slice(0, 10) : [];
+    const tags = Array.isArray(v.hashtagList) ? v.hashtagList.map(String).slice(0, 10) : [];
+    const url = v.webLink ?? `https://www.binance.com/en/square/post/${id}`;
+    const r = await sql`
+      INSERT INTO square_posts (id, author, verified, square_author_id, title, content, coin_pairs, hashtags, views, likes, post_ms, url)
+      VALUES (
+        ${id}, ${String(v.authorName ?? "unknown")}, ${v.authorIsVerified === true},
+        ${v.squareAuthorId ? String(v.squareAuthorId) : null},
+        ${String(v.title ?? "")}, ${String(v.content ?? "")},
+        ${pairs}, ${tags},
+        ${Number(v.viewCount) || 0}, ${Number(v.likeCount) || 0},
+        ${toMs(v.date)}, ${url}
+      )
+      ON CONFLICT (id) DO UPDATE SET
+        views = EXCLUDED.views, likes = EXCLUDED.likes, collected_at = now()
+      RETURNING (xmax = 0) AS is_new`;
+    if (r.length > 0 && r[0].is_new) inserted++;
+    else updated++;
+  }
+  await sql`DELETE FROM square_posts WHERE collected_at < now() - interval '14 days'`;
+  console.log(JSON.stringify({ scraped: seen.size, inserted, updated, ms: Date.now() - started }));
+})().catch((e) => { console.error("COLLECT-ERR", e.message); process.exit(1); });

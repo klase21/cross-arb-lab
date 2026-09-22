@@ -95,10 +95,51 @@ export async function GET() {
     return NextResponse.json(cache.data, { headers: { "Cache-Control": "public, max-age=60" } });
   }
 
-  const pages = await Promise.all([fetchSquarePage(1), fetchSquarePage(2), fetchSquarePage(3)]);
-  const seen = new Map<string, RawSquarePost>();
-  for (const p of pages.flat()) if (!seen.has(p.id)) seen.set(p.id, p);
-  const posts = Array.from(seen.values());
+  // Primary: Neon table filled by scripts/square-collect (10-min cron).
+  // Falls back to live bapi only when the table is empty/unconfigured.
+  let posts: RawSquarePost[] = [];
+  let fromDb = false;
+  if (process.env.DATABASE_URL) {
+    try {
+      const { neon } = await import("@neondatabase/serverless");
+      const sql = neon(process.env.DATABASE_URL);
+      const rows = (await sql`
+        SELECT id, author, verified, square_author_id, title, content,
+               coin_pairs, hashtags, views, likes, post_ms, url
+        FROM square_posts
+        WHERE collected_at > now() - interval '7 days'
+        ORDER BY collected_at DESC
+        LIMIT 600`) as {
+        id: string; author: string; verified: boolean; square_author_id: string | null;
+        title: string; content: string; coin_pairs: string[]; hashtags: string[];
+        views: number; likes: number; post_ms: string | number; url: string;
+      }[];
+      if (rows.length > 0) {
+        fromDb = true;
+        posts = rows.map(r => ({
+          id: r.id,
+          author: r.author,
+          verified: r.verified === true,
+          squareAuthorId: r.square_author_id,
+          title: r.title ?? "",
+          content: r.content ?? "",
+          coinPairs: Array.isArray(r.coin_pairs) ? r.coin_pairs : [],
+          hashtags: Array.isArray(r.hashtags) ? r.hashtags : [],
+          quoteSymbols: [],
+          views: r.views ?? 0,
+          likes: r.likes ?? 0,
+          dateMs: Number(r.post_ms) || Date.now(),
+          url: r.url,
+        }));
+      }
+    } catch { /* fall through to live */ }
+  }
+  if (!fromDb) {
+    const pages = await Promise.all([fetchSquarePage(1), fetchSquarePage(2), fetchSquarePage(3)]);
+    const seen = new Map<string, RawSquarePost>();
+    for (const p of pages.flat()) if (!seen.has(p.id)) seen.set(p.id, p);
+    posts = Array.from(seen.values());
+  }
 
   const priceMap = new Map<string, number>();
   try {
@@ -306,6 +347,7 @@ export async function GET() {
 
   const payload = {
     postsScanned: posts.length,
+    feed: fromDb ? "db" : "live",
     signals,
     traders,
     authors,

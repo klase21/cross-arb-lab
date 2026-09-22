@@ -9,7 +9,8 @@
     "lint": "eslint",
     "verify": "tsc --noEmit && next build",
     "typecheck": "tsc --noEmit",
-    "collect:tv": "node scripts/tv-collect/collect.mjs"
+    "collect:tv": "node scripts/tv-collect/collect.mjs",
+    "collect:square": "node scripts/square-collect/collect.mjs"
   },
   "dependencies": {
     "@neon/config": "^1.7.2",
