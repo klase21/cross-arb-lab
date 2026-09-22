@@ -10,6 +10,8 @@ import {
   consumeDraft,
   executeMarket,
   executePair,
+  forceCloseFunding,
+  forceClosePosition,
   fundingPricePnl,
   loadAccount,
   loadEquity,
@@ -92,6 +94,8 @@ export default function PaperView() {
   const [pairNotionalInput, setPairNotionalInput] = useState("1000");
   const [pairMsg, setPairMsg] = useState<string | null>(null);
   const [posMsg, setPosMsg] = useState<string | null>(null);
+  const [armed, setArmed] = useState<string | null>(null);
+  const [armedFund, setArmedFund] = useState<string | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
   const [arbs, setArbs] = useState<FundRow[]>([]);
   const [fundBase, setFundBase] = useState<string | null>(null);
@@ -379,7 +383,22 @@ export default function PaperView() {
     const pos = account.funding.find(f => f.id === id);
     if (!pos) return;
     const row = arbs.find(r => r.base === pos.base);
-    if (!row || row.longMark === null || row.shortMark === null) { setFundMsg(t("paper.noQuote")); return; }
+    if (!row || row.longMark === null || row.shortMark === null) {
+      if (armedFund === id) {
+        const result = forceCloseFunding(account, id);
+        setArmedFund(null);
+        if (!("error" in result)) {
+          setAccount(result.account);
+          saveAccount(result.account);
+          setFundMsg(t("paper.filled"));
+        }
+      } else {
+        setArmedFund(id);
+        setFundMsg(t("paper.armForce"));
+      }
+      return;
+    }
+    setArmedFund(null);
     const result = closeFunding(account, id, {
       longApr: row.longApr, shortApr: row.shortApr,
       longMark: row.longMark, shortMark: row.shortMark,
@@ -420,7 +439,24 @@ export default function PaperView() {
       const e = extMap[sym];
       if (e) q = { venue: v, coin: sym, bidUsd: e.bid, askUsd: e.ask };
     }
-    if (!q) { setPosMsg(t("paper.noQuote")); return; }
+    if (!q) {
+      // No live quote (delisted/unquoted): second click force-closes at avg cost.
+      const key = `${v}:${sym}`;
+      if (armed === key) {
+        const result = forceClosePosition(account, v, sym);
+        setArmed(null);
+        if (!("error" in result)) {
+          setAccount(result.account);
+          saveAccount(result.account);
+          setPosMsg(t("paper.filled"));
+        }
+      } else {
+        setArmed(key);
+        setPosMsg(t("paper.armForce"));
+      }
+      return;
+    }
+    setArmed(null);
     const result = executeMarket(account, q, "sell", qtyToClose, "close");
     if ("error" in result) {
       setPosMsg(result.error === "position" ? t("paper.noPosition") : t("paper.badQty"));
@@ -633,8 +669,11 @@ export default function PaperView() {
                         {total >= 0 ? "+" : ""}{fmtUsd2(total)}
                       </td>
                       <td className="px-3 py-2 text-right">
-                        <button onClick={() => closeFund(f.id)} className="px-2 py-0.5 rounded bg-zinc-800 text-zinc-300 hover:bg-zinc-700">
-                          {t("paper.close")}
+                        <button
+                          onClick={() => closeFund(f.id)}
+                          className={`px-2 py-0.5 rounded text-zinc-300 ${armedFund === f.id ? "bg-red-700 hover:bg-red-600" : "bg-zinc-800 hover:bg-zinc-700"}`}
+                        >
+                          {armedFund === f.id ? t("paper.forceClose") : t("paper.close")}
                         </button>
                       </td>
                     </tr>
@@ -679,8 +718,11 @@ export default function PaperView() {
                         {upnl >= 0 ? "+" : ""}{fmtUsd(upnl)}
                       </td>
                       <td className="px-3 py-2 text-right">
-                        <button onClick={() => closePosition(p.venue, p.coin, p.qty)} className="px-2 py-0.5 rounded bg-zinc-800 text-zinc-300 hover:bg-zinc-700">
-                          {t("paper.close")}
+                        <button
+                          onClick={() => closePosition(p.venue, p.coin, p.qty)}
+                          className={`px-2 py-0.5 rounded text-zinc-300 ${armed === `${p.venue}:${p.coin.toUpperCase()}` ? "bg-red-700 hover:bg-red-600" : "bg-zinc-800 hover:bg-zinc-700"}`}
+                        >
+                          {armed === `${p.venue}:${p.coin.toUpperCase()}` ? t("paper.forceClose") : t("paper.close")}
                         </button>
                       </td>
                     </tr>

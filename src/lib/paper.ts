@@ -403,3 +403,67 @@ export function clearEquity(): void {
     localStorage.removeItem(EQUITY_KEY);
   } catch {}
 }
+
+// ------------------------------------------------------------ force close ---
+
+/** Force-close a spot position at average cost when no live quote exists
+ * (delisted/unquoted). Settles at avg price with no extra fee; keeps
+ * already-realized PnL. */
+export function forceClosePosition(
+  account: PaperAccount,
+  venue: PaperVenue,
+  coin: string,
+): { account: PaperAccount; fill: PaperFill } | { error: string } {
+  const positions = account.positions.map(p => ({ ...p }));
+  const pos = positions.find(p => p.venue === venue && p.coin === coin);
+  if (!pos || pos.qty <= 1e-12) return { error: "position" };
+  const fills = [...account.fills];
+  const cashUsd = account.cashUsd + pos.qty * pos.avgPriceUsd;
+  const fill: PaperFill = {
+    id: uid(), ts: Date.now(), venue, coin, side: "sell",
+    qty: pos.qty, priceUsd: pos.avgPriceUsd, feeUsd: 0, note: "force-close",
+  };
+  fills.unshift(fill);
+  const closedTrades = [...account.closedTrades];
+  closedTrades.unshift({
+    id: uid(), venue, coin, qty: pos.qty,
+    realizedPnlUsd: pos.realizedPnlUsd, closedAt: Date.now(),
+  });
+  return {
+    account: {
+      ...account,
+      cashUsd,
+      positions: positions.filter(p => p !== pos),
+      fills: fills.slice(0, 300),
+      closedTrades: closedTrades.slice(0, 300),
+      updatedAt: Date.now(),
+    },
+    fill,
+  };
+}
+
+/** Force-close a funding position at entry marks (price PnL zeroed). */
+export function forceCloseFunding(
+  account: PaperAccount,
+  positionId: string,
+): { account: PaperAccount; closed: FundingClosed } | { error: string } {
+  const position = account.funding.find(f => f.id === positionId);
+  if (!position) return { error: "position" };
+  const now = Date.now();
+  const closed: FundingClosed = {
+    id: position.id, base: position.base,
+    longVenue: position.longVenue, shortVenue: position.shortVenue,
+    pnlUsd: position.accFundingUsd, fundingUsd: position.accFundingUsd,
+    pricePnlUsd: 0, closedAt: now,
+  };
+  return {
+    account: {
+      ...account,
+      cashUsd: account.cashUsd + position.accFundingUsd,
+      funding: account.funding.filter(f => f.id !== positionId),
+      fundingClosed: [closed, ...account.fundingClosed].slice(0, 100),
+      updatedAt: now,
+    },
+    closed,
+  };
+}
