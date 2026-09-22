@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "verify": "tsc --noEmit && next build",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "collect:tv": "node scripts/tv-collect/collect.mjs"
   },
   "dependencies": {
     "@neon/config": "^1.7.2",
@@ -26,6 +27,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.3.2",
+    "playwright": "^1.63.0",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

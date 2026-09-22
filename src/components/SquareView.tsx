@@ -3,9 +3,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePollingInterval } from "@/lib/use-polling";
 import { useLang } from "@/lib/i18n";
+import { trustScore } from "@/lib/square";
 
 interface SquareSignal {
   id: string;
+  source: "square" | "tv";
   author: string;
   authorVerified: boolean;
   asset: string;
@@ -31,6 +33,7 @@ interface SquareSignal {
 
 interface SquareTrader {
   author: string;
+  source: "square" | "tv";
   verified: boolean;
   calls: number;
   wins: number;
@@ -45,6 +48,7 @@ type StatusFilter = "all" | "live" | "open" | "closed";
 type SideFilter = "all" | "LONG" | "SHORT";
 type MarketFilter = "all" | "SPOT" | "FUTURES";
 type ConfFilter = "all" | "high" | "medium" | "low";
+type SourceFilter = "all" | "square" | "tv";
 type SortKey = "roi" | "views" | "recent";
 
 function fmtPrice(n: number | null): string {
@@ -71,7 +75,6 @@ function trustCls(score: number): string {
 export default function SquareView() {
   const { t, lang } = useLang();
   const [signals, setSignals] = useState<SquareSignal[]>([]);
-  const [traders, setTraders] = useState<SquareTrader[]>([]);
   const [scanned, setScanned] = useState(0);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
@@ -80,19 +83,31 @@ export default function SquareView() {
   const [sideF, setSideF] = useState<SideFilter>("all");
   const [marketF, setMarketF] = useState<MarketFilter>("all");
   const [confF, setConfF] = useState<ConfFilter>("all");
+  const [sourceF, setSourceF] = useState<SourceFilter>("all");
   const [sort, setSort] = useState<SortKey>("roi");
   const intervalSec = usePollingInterval();
 
   const load = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await fetch("/api/square");
-      if (res.ok) {
-        const data = await res.json();
-        setSignals(Array.isArray(data.signals) ? data.signals : []);
-        setTraders(Array.isArray(data.traders) ? data.traders : []);
-        setScanned(data.postsScanned ?? 0);
+      const [sqRes, tvRes] = await Promise.all([
+        fetch("/api/square").catch(() => null),
+        fetch("/api/tv").catch(() => null),
+      ]);
+      const merged: SquareSignal[] = [];
+      let scannedTotal = 0;
+      if (sqRes?.ok) {
+        const data = await sqRes.json();
+        if (Array.isArray(data.signals)) merged.push(...data.signals);
+        scannedTotal += data.postsScanned ?? 0;
       }
+      if (tvRes?.ok) {
+        const data = await tvRes.json();
+        if (Array.isArray(data.signals)) merged.push(...data.signals);
+        scannedTotal += data.postsScanned ?? 0;
+      }
+      setSignals(merged);
+      setScanned(scannedTotal);
       setLastUpdated(new Date().toLocaleTimeString(lang === "ko" ? "ko-KR" : "en-US"));
     } catch {} finally {
       setLoading(false);
@@ -115,6 +130,7 @@ export default function SquareView() {
       if (sideF !== "all" && s.side !== sideF) return false;
       if (marketF !== "all" && s.market !== marketF) return false;
       if (confF !== "all" && s.confidence !== confF) return false;
+      if (sourceF !== "all" && (s.source ?? "square") !== sourceF) return false;
       return true;
     });
     return [...list].sort((a, b) => {
@@ -122,14 +138,53 @@ export default function SquareView() {
       if (sort === "recent") return b.postMs - a.postMs;
       return (b.roiPct ?? -Infinity) - (a.roiPct ?? -Infinity);
     });
-  }, [signals, search, statusF, sideF, marketF, confF, sort]);
+  }, [signals, search, statusF, sideF, marketF, confF, sourceF, sort]);
+
+  // Leaderboard aggregated client-side from the filtered set (high+medium only,
+  // authors namespaced per source to avoid cross-source collisions).
+  const traders = useMemo<SquareTrader[]>(() => {
+    const byAuthor = new Map<string, { signals: SquareSignal[]; verified: boolean }>();
+    for (const s of filtered) {
+      if (s.confidence === "low") continue;
+      const key = `${s.source ?? "square"}:${s.author}`;
+      const g = byAuthor.get(key) ?? { signals: [], verified: false };
+      g.signals.push(s);
+      g.verified = g.verified || s.authorVerified;
+      byAuthor.set(key, g);
+    }
+    const out: SquareTrader[] = [];
+    for (const [key, g] of byAuthor) {
+      const closed = g.signals.filter(s => s.status === "CLOSED_WIN" || s.status === "CLOSED_LOSS");
+      const wins = closed.filter(s => s.status === "CLOSED_WIN").length;
+      const losses = closed.length - wins;
+      const rois = g.signals.map(s => s.roiPct).filter((v): v is number => typeof v === "number" && Number.isFinite(v));
+      const avgRoi = rois.length > 0 ? rois.reduce((a, b) => a + b, 0) / rois.length : 0;
+      const withStop = g.signals.filter(s => s.stop !== null).length;
+      const withStopPct = g.signals.length > 0 ? (withStop / g.signals.length) * 100 : 0;
+      const author = key.replace(/^(square|tv):/, "");
+      const source = (key.startsWith("tv:") ? "tv" : "square") as "square" | "tv";
+      out.push({
+        author,
+        source,
+        verified: g.verified,
+        calls: g.signals.length,
+        wins,
+        losses,
+        winRate: closed.length > 0 ? (wins / closed.length) * 100 : 0,
+        avgRoi,
+        trustScore: trustScore(g.signals.length, wins, losses, avgRoi, withStopPct),
+        withStopPct,
+      });
+    }
+    return out.sort((a, b) => b.trustScore - a.trustScore || b.calls - a.calls);
+  }, [filtered]);
 
   const stats = useMemo(() => {
     const withClosed = traders.filter(x => x.wins + x.losses > 0);
     const avgWin = withClosed.length > 0 ? withClosed.reduce((a, x) => a + x.winRate, 0) / withClosed.length : 0;
-    const best = signals.reduce((m, s) => Math.max(m, s.roiPct ?? -Infinity), -Infinity);
-    return { calls: signals.length, traders: traders.length, avgWin, best: best === -Infinity ? null : best };
-  }, [signals, traders]);
+    const best = filtered.reduce((m, s) => Math.max(m, s.roiPct ?? -Infinity), -Infinity);
+    return { calls: filtered.length, traders: traders.length, avgWin, best: best === -Infinity ? null : best };
+  }, [filtered, traders]);
 
   const selBtn = (active: boolean) =>
     `px-2.5 py-1 rounded-md text-xs whitespace-nowrap transition-colors ${active ? "bg-emerald-600 text-white" : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700"}`;
@@ -173,7 +228,10 @@ export default function SquareView() {
                 {traders.slice(0, 10).map((x, i) => (
                   <tr key={x.author} className="border-t border-zinc-800 hover:bg-zinc-900/60">
                     <td className="px-3 py-2 text-zinc-500">{i + 1}</td>
-                    <td className="px-3 py-2 font-medium">{x.author}{x.verified && <span className="ml-1 text-sky-400">✓</span>}</td>
+                    <td className="px-3 py-2 font-medium">
+                      {x.author}{x.verified && <span className="ml-1 text-sky-400">✓</span>}
+                      <span className="ml-1.5 text-[10px] px-1 py-px rounded bg-zinc-800 text-zinc-500">{x.source === "tv" ? "TV" : "SQ"}</span>
+                    </td>
                     <td className="px-3 py-2 text-right">{x.calls}</td>
                     <td className="px-3 py-2 text-right text-zinc-400">{x.wins}-{x.losses}</td>
                     <td className="px-3 py-2 text-right">{x.winRate.toFixed(0)}%</td>
@@ -221,6 +279,9 @@ export default function SquareView() {
           {(["all", "high", "medium", "low"] as ConfFilter[]).map(s => (
             <button key={s} onClick={() => setConfF(s)} className={selBtn(confF === s)}>{t(`square.conf.${s}`)}</button>
           ))}
+          {(["all", "square", "tv"] as SourceFilter[]).map(s => (
+            <button key={s} onClick={() => setSourceF(s)} className={selBtn(sourceF === s)}>{t(`square.src.${s}`)}</button>
+          ))}
           {(["roi", "views", "recent"] as SortKey[]).map(s => (
             <button key={s} onClick={() => setSort(s)} className={selBtn(sort === s)}>↓ {t(`square.sort.${s}`)}</button>
           ))}
@@ -243,6 +304,7 @@ export default function SquareView() {
                 <div className="flex items-center gap-1.5 flex-wrap mb-1.5">
                   <span className="font-bold text-sm">${s.asset}</span>
                   <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${s.side === "LONG" ? "bg-emerald-500/15 text-emerald-300" : "bg-red-500/15 text-red-300"}`}>{s.side}</span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-500">{(s.source ?? "square") === "tv" ? "TV" : "SQ"}</span>
                   <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">{s.market}{s.leverage ? ` ${s.leverage}x` : ""}</span>
                   <span className={`text-[10px] px-1.5 py-0.5 rounded ${s.confidence === "high" ? "bg-sky-500/15 text-sky-300" : s.confidence === "medium" ? "bg-amber-500/15 text-amber-300" : "bg-zinc-800 text-zinc-500"}`}>
                     {t(`square.conf.${s.confidence}`)}
