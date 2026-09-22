@@ -9,6 +9,7 @@ interface SquareSignal {
   id: string;
   source: "square" | "tv" | "st";
   author: string;
+  authorId?: string | null;
   authorVerified: boolean;
   asset: string;
   side: "LONG" | "SHORT";
@@ -96,6 +97,10 @@ export default function SquareView() {
   const [sourceF, setSourceF] = useState<SourceFilter>("all");
   const [showDetail, setShowDetail] = useState(false);
   const [authors, setAuthors] = useState<Record<string, { followers: number | null }>>({});
+  const [tracked, setTracked] = useState<{ squareUid: string; username: string; displayName: string; followers: number; postCount: number }[]>([]);
+  const [trackInput, setTrackInput] = useState("");
+  const [trackMsg, setTrackMsg] = useState<string | null>(null);
+  const [leaderSort, setLeaderSort] = useState<"trust" | "followers">("trust");
   const [sort, setSort] = useState<SortKey>("roi");
   const [fng, setFng] = useState<{ value: number; label: string } | null>(null);
   const [whales, setWhales] = useState<{ base: string; netUsd: number; bias: string; prints: number }[]>([]);
@@ -108,12 +113,13 @@ export default function SquareView() {
   const load = useCallback(async () => {
     try {
       setLoading(true);
-      const [sqRes, tvRes, stRes, fngRes, whaleRes] = await Promise.all([
+      const [sqRes, tvRes, stRes, fngRes, whaleRes, trackRes] = await Promise.all([
         fetch("/api/square").catch(() => null),
         fetch("/api/tv").catch(() => null),
         fetch("/api/st").catch(() => null),
         fetch("/api/fng").catch(() => null),
         fetch("/api/whales").catch(() => null),
+        fetch("/api/square/track").catch(() => null),
       ]);
       const merged: SquareSignal[] = [];
       let scannedTotal = 0;
@@ -142,6 +148,10 @@ export default function SquareView() {
         if (Array.isArray(data.rows)) {
           setWhales(data.rows.filter((r: { bias: string }) => r.bias !== "NEUTRAL").slice(0, 10));
         }
+      }
+      if (trackRes?.ok) {
+        const data = await trackRes.json();
+        if (Array.isArray(data.traders)) setTracked(data.traders);
       }
       setSignals(merged);
       setScanned(scannedTotal);
@@ -218,6 +228,61 @@ export default function SquareView() {
     return out.sort((a, b) => b.trustScore - a.trustScore || b.calls - a.calls);
   }, [filtered, authors]);
 
+  const sortedTraders = useMemo(() => {
+    if (leaderSort === "followers") {
+      return [...traders].sort((a, b) => (b.followers ?? -1) - (a.followers ?? -1) || b.calls - a.calls);
+    }
+    return traders;
+  }, [traders, leaderSort]);
+
+  // One-click suggestions: most active firehose authors not yet tracked.
+  // Passes squareUid directly (display names often differ from usernames).
+  const suggestions = useMemo(() => {
+    const trackedNames = new Set(tracked.map(t => (t.displayName || t.username).toLowerCase()));
+    const counts = new Map<string, { author: string; uid: string | null; calls: number }>();
+    for (const s of signals) {
+      if (s.source !== "square") continue;
+      const g = counts.get(s.author) ?? { author: s.author, uid: s.authorId ?? null, calls: 0 };
+      g.calls++;
+      if (!g.uid && s.authorId) g.uid = s.authorId;
+      counts.set(s.author, g);
+    }
+    return [...counts.values()]
+      .filter(c => c.uid && !trackedNames.has(c.author.toLowerCase()))
+      .sort((a, b) => b.calls - a.calls)
+      .slice(0, 5);
+  }, [signals, tracked]);
+
+  const addTracked = async (input: string) => {
+    const value = input.trim();
+    if (!value) return;
+    setTrackMsg(null);
+    try {
+      const res = await fetch("/api/square/track", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ input: value }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setTrackMsg(data.error ?? t("square.trackFail"));
+        return;
+      }
+      setTrackInput("");
+      setTrackMsg(t("square.trackAdded"));
+      void load();
+    } catch {
+      setTrackMsg(t("square.trackFail"));
+    }
+  };
+
+  const removeTracked = async (uid: string) => {
+    try {
+      await fetch(`/api/square/track?uid=${encodeURIComponent(uid)}`, { method: "DELETE" });
+      setTracked(prev => prev.filter(x => x.squareUid !== uid));
+    } catch {}
+  };
+
   const stats = useMemo(() => {
     const withClosed = traders.filter(x => x.wins + x.losses > 0);
     const avgWin = withClosed.length > 0 ? withClosed.reduce((a, x) => a + x.winRate, 0) / withClosed.length : 0;
@@ -264,8 +329,51 @@ export default function SquareView() {
       )}
 
       <section>
-        <h2 className="text-sm font-semibold mb-2">🏆 {t("square.leaderboard")}</h2>
-        {traders.length === 0 ? (
+        <h2 className="text-sm font-semibold mb-2">👁️ {t("square.tracked")}</h2>
+        <div className="flex flex-wrap items-center gap-1.5 mb-2">
+          <input
+            value={trackInput}
+            onChange={e => setTrackInput(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter") void addTracked(trackInput); }}
+            placeholder={t("square.trackPlaceholder")}
+            className="px-2.5 py-1 rounded-md text-xs bg-zinc-900 border border-zinc-700 text-zinc-200 placeholder:text-zinc-600 w-64"
+          />
+          <button onClick={() => void addTracked(trackInput)} className={selBtn(false)}>+ {t("square.trackAdd")}</button>
+          {trackMsg && <span className="text-[11px] text-amber-300">{trackMsg}</span>}
+        </div>
+        {(tracked.length > 0 || suggestions.length > 0) && (
+          <div className="flex flex-wrap gap-1.5">
+            {tracked.map(x => (
+              <span key={x.squareUid} className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-emerald-950/40 border border-emerald-800/60 text-xs">
+                <b>{x.displayName || x.username}</b>
+                <span className="text-zinc-400">👥{fmtFollowers(x.followers)} · {x.postCount}{t("square.postsUnit")}</span>
+                <button onClick={() => void removeTracked(x.squareUid)} className="text-zinc-500 hover:text-red-300">✕</button>
+              </span>
+            ))}
+            {suggestions.map(s => (
+              <button
+                key={s.author}
+                onClick={() => void addTracked(s.uid ?? s.author)}
+                title={t("square.suggestTitle")}
+                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-dashed border-zinc-700 text-xs text-zinc-400 hover:border-emerald-600 hover:text-emerald-300"
+              >
+                + {s.author} <span className="text-zinc-600">({s.calls})</span>
+              </button>
+            ))}
+          </div>
+        )}
+        <p className="text-[11px] text-zinc-600 mt-1.5">{t("square.trackDesc")}</p>
+      </section>
+
+      <section>
+        <div className="flex items-center gap-2 mb-2">
+          <h2 className="text-sm font-semibold">🏆 {t("square.leaderboard")}</h2>
+          <div className="flex gap-1 ml-auto">
+            <button onClick={() => setLeaderSort("trust")} className={selBtn(leaderSort === "trust")}>{t("square.trust")}</button>
+            <button onClick={() => setLeaderSort("followers")} className={selBtn(leaderSort === "followers")}>{t("square.followers")}</button>
+          </div>
+        </div>
+        {sortedTraders.length === 0 ? (
           <p className="text-xs text-zinc-500">{loading ? t("common.loading") : t("common.noData")}</p>
         ) : (
           <div className="overflow-x-auto rounded-lg border border-zinc-800">
@@ -283,7 +391,7 @@ export default function SquareView() {
                 </tr>
               </thead>
               <tbody>
-                {traders.slice(0, 10).map((x, i) => (
+                {sortedTraders.slice(0, 10).map((x, i) => (
                   <tr key={x.author} className="border-t border-zinc-800 hover:bg-zinc-900/60">
                     <td className="px-3 py-2 text-zinc-500">{i + 1}</td>
                     <td className="px-3 py-2 font-medium">
