@@ -163,8 +163,9 @@ export async function GET() {
       const basis = entry ?? postPrice;
       let status: SquareStatus = "OPEN";
       let closeReason: string | null = null;
+      let closedAtMs: number | null = null;
       if (basis !== null && klines.length > 0 && confidence !== "low") {
-        ({ status, closeReason } = replay(c.side, basis, target, stop, klines, c.postMs));
+        ({ status, closeReason, closedAtMs } = replay(c.side, basis, target, stop, klines, c.postMs));
       } else if (basis !== null && curPrice !== null) {
         status = "LIVE";
       }
@@ -173,7 +174,7 @@ export async function GET() {
         roiPct = priceRoiPct(c.side, basis, curPrice);
         if (c.market === "FUTURES" && c.leverage !== null) roiPct = roiPct * c.leverage;
       }
-      return { ...c, entry, target, stop, confidence, postPrice, curPrice, roiPct, status, closeReason };
+      return { ...c, entry, target, stop, confidence, postPrice, curPrice, roiPct, status, closeReason, closedAtMs };
     });
 
     signals.sort((a, b) => b.postMs - a.postMs);

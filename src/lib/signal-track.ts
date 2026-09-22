@@ -10,7 +10,7 @@ export function replay(
   stop: number | null,
   klines: Kline[],
   postMs: number,
-): { status: SquareStatus; closeReason: string | null } {
+): { status: SquareStatus; closeReason: string | null; closedAtMs: number | null } {
   let filled = false;
   for (const k of klines) {
     if (k[0] < postMs) continue;
@@ -24,16 +24,16 @@ export function replay(
     if (side === "LONG") {
       const hitStop = stop !== null && low <= stop;
       const hitTp = target !== null && high >= target;
-      if (hitStop && hitTp) return { status: "CLOSED_LOSS", closeReason: "SL" };
-      if (hitStop) return { status: "CLOSED_LOSS", closeReason: "SL" };
-      if (hitTp) return { status: "CLOSED_WIN", closeReason: "TP" };
+      if (hitStop && hitTp) return { status: "CLOSED_LOSS", closeReason: "SL", closedAtMs: k[0] };
+      if (hitStop) return { status: "CLOSED_LOSS", closeReason: "SL", closedAtMs: k[0] };
+      if (hitTp) return { status: "CLOSED_WIN", closeReason: "TP", closedAtMs: k[0] };
     } else {
       const hitStop = stop !== null && high >= stop;
       const hitTp = target !== null && low <= target;
-      if (hitStop && hitTp) return { status: "CLOSED_LOSS", closeReason: "SL" };
-      if (hitStop) return { status: "CLOSED_LOSS", closeReason: "SL" };
-      if (hitTp) return { status: "CLOSED_WIN", closeReason: "TP" };
+      if (hitStop && hitTp) return { status: "CLOSED_LOSS", closeReason: "SL", closedAtMs: k[0] };
+      if (hitStop) return { status: "CLOSED_LOSS", closeReason: "SL", closedAtMs: k[0] };
+      if (hitTp) return { status: "CLOSED_WIN", closeReason: "TP", closedAtMs: k[0] };
     }
   }
-  return { status: filled ? "LIVE" : "OPEN", closeReason: null };
+  return { status: filled ? "LIVE" : "OPEN", closeReason: null, closedAtMs: null };
 }

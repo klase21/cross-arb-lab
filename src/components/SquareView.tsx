@@ -3,15 +3,17 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePollingInterval } from "@/lib/use-polling";
 import { useLang } from "@/lib/i18n";
-import { trustScore } from "@/lib/square";
+import { trustScore, traderStyle } from "@/lib/square";
 
 interface SquareSignal {
   id: string;
   source: "square" | "tv" | "st";
+  postId: string;
   author: string;
   authorId?: string | null;
   authorVerified: boolean;
   asset: string;
+  symbol: string;
   side: "LONG" | "SHORT";
   market: "SPOT" | "FUTURES";
   confidence: "high" | "medium" | "low";
@@ -41,9 +43,15 @@ interface SquareTrader {
   losses: number;
   winRate: number;
   avgRoi: number;
+  totalRoi: number;
   trustScore: number;
   withStopPct: number;
   followers?: number | null;
+  avgHoldHours?: number | null;
+  longPct?: number;
+  style?: "Scalper" | "Swing" | "Mixed";
+  bias?: "Bull" | "Bear" | "Mixed";
+  market?: "Spot" | "Futures" | "Mixed";
 }
 
 function fmtFollowers(n: number | null | undefined): string {
@@ -101,6 +109,7 @@ export default function SquareView() {
   const [trackInput, setTrackInput] = useState("");
   const [trackMsg, setTrackMsg] = useState<string | null>(null);
   const [leaderSort, setLeaderSort] = useState<"trust" | "followers">("trust");
+  const [watch, setWatch] = useState<string[]>([]);
   const [sort, setSort] = useState<SortKey>("roi");
   const [fng, setFng] = useState<{ value: number; label: string } | null>(null);
   const [whales, setWhales] = useState<{ base: string; netUsd: number; bias: string; prints: number }[]>([]);
@@ -167,6 +176,24 @@ export default function SquareView() {
     return () => { clearTimeout(kickoff); clearInterval(interval); };
   }, [load, intervalSec]);
 
+  useEffect(() => {
+    const kickoff = setTimeout(() => {
+      try {
+        const raw = localStorage.getItem("sqWatch");
+        if (raw) setWatch(JSON.parse(raw) as string[]);
+      } catch {}
+    }, 0);
+    return () => clearTimeout(kickoff);
+  }, []);
+
+  const toggleWatch = (key: string) => {
+    setWatch(prev => {
+      const next = prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key];
+      try { localStorage.setItem("sqWatch", JSON.stringify(next)); } catch {}
+      return next;
+    });
+  };
+
   const filtered = useMemo(() => {
     const q = search.trim().toUpperCase();
     const list = signals.filter(s => {
@@ -211,6 +238,7 @@ export default function SquareView() {
       const author = key.replace(/^(square|tv|st):/, "");
       const source = (key.startsWith("tv:") ? "tv" : key.startsWith("st:") ? "st" : "square") as "square" | "tv" | "st";
       const followers = source === "square" ? (authors[key]?.followers ?? null) : null;
+      const style = traderStyle(g.signals);
       out.push({
         author,
         source,
@@ -221,8 +249,14 @@ export default function SquareView() {
         losses,
         winRate: closed.length > 0 ? (wins / closed.length) * 100 : 0,
         avgRoi,
+        totalRoi: style.totalRoi,
         trustScore: trustScore(g.signals.length, wins, losses, avgRoi, withStopPct),
         withStopPct,
+        avgHoldHours: style.avgHoldHours,
+        longPct: style.longPct,
+        style: style.style,
+        bias: style.bias,
+        market: style.market,
       });
     }
     return out.sort((a, b) => b.trustScore - a.trustScore || b.calls - a.calls);
@@ -234,6 +268,18 @@ export default function SquareView() {
     }
     return traders;
   }, [traders, leaderSort]);
+
+  const boardStats = useMemo(() => {
+    const closed = filtered.filter(s => s.status === "CLOSED_WIN" || s.status === "CLOSED_LOSS");
+    const wins = closed.filter(s => s.status === "CLOSED_WIN").length;
+    const live = filtered.filter(s => s.status === "LIVE").length;
+    const open = filtered.filter(s => s.status === "OPEN").length;
+    const totalRoi = filtered
+      .map(s => s.roiPct)
+      .filter((v): v is number => typeof v === "number" && Number.isFinite(v))
+      .reduce((a, b) => a + b, 0);
+    return { total: filtered.length, live, open, closed: closed.length, wins, totalRoi };
+  }, [filtered]);
 
   // One-click suggestions: most active firehose authors not yet tracked.
   // Passes squareUid directly (display names often differ from usernames).
@@ -373,48 +419,100 @@ export default function SquareView() {
             <button onClick={() => setLeaderSort("followers")} className={selBtn(leaderSort === "followers")}>{t("square.followers")}</button>
           </div>
         </div>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-zinc-400 rounded-lg border border-zinc-800 bg-zinc-900/40 px-3 py-2 mb-2">
+          <span>📶 {t("square.calls")}: <b className="text-zinc-200">{boardStats.total}</b></span>
+          <span>🟢 Live <b className="text-zinc-200">{boardStats.live}</b></span>
+          <span>🕓 Open <b className="text-zinc-200">{boardStats.open}</b></span>
+          <span>✅ {t("square.closedCount")}: <b className="text-zinc-200">{boardStats.closed}</b></span>
+          <span>🎯 {t("square.winRate")}: <b className="text-zinc-200">{boardStats.closed > 0 ? Math.round((boardStats.wins / boardStats.closed) * 100) : 0}%</b></span>
+          <span>💰 ROI: <b className={boardStats.totalRoi >= 0 ? "text-emerald-400" : "text-red-400"}>{boardStats.totalRoi >= 0 ? "+" : ""}{boardStats.totalRoi.toFixed(1)}%</b></span>
+        </div>
         {sortedTraders.length === 0 ? (
           <p className="text-xs text-zinc-500">{loading ? t("common.loading") : t("common.noData")}</p>
         ) : (
           <div className="overflow-x-auto rounded-lg border border-zinc-800">
-            <table className="w-full text-xs min-w-[640px]">
+            <table className="w-full text-xs min-w-[860px]">
               <thead>
                 <tr className="bg-zinc-900 text-zinc-400 text-left">
                   <th className="px-3 py-2">#</th>
                   <th className="px-3 py-2">{t("square.trader")}</th>
-                  <th className="px-3 py-2 text-right">{t("square.callsCount")}</th>
-                  <th className="px-3 py-2 text-right">W-L</th>
+                  <th className="px-3 py-2">{t("square.style")}</th>
                   <th className="px-3 py-2 text-right">{t("square.winRate")}</th>
-                  <th className="px-3 py-2 text-right">{t("square.avgRoi")}</th>
+                  <th className="px-3 py-2 text-right">{t("square.totalRoi")}</th>
+                  <th className="px-3 py-2 text-right">{t("square.avgHold")}</th>
+                  <th className="px-3 py-2 text-right">W-L</th>
+                  <th className="px-3 py-2 text-right">{t("square.callsCount")}</th>
                   <th className="px-3 py-2 text-right">{t("square.followers")}</th>
-                  <th className="px-3 py-2 w-40">{t("square.trust")}</th>
+                  <th className="px-3 py-2 w-32">{t("square.trust")}</th>
+                  <th className="px-3 py-2"></th>
                 </tr>
               </thead>
               <tbody>
-                {sortedTraders.slice(0, 10).map((x, i) => (
-                  <tr key={x.author} className="border-t border-zinc-800 hover:bg-zinc-900/60">
-                    <td className="px-3 py-2 text-zinc-500">{i + 1}</td>
-                    <td className="px-3 py-2 font-medium">
-                      {x.author}{x.verified && <span className="ml-1 text-sky-400">✓</span>}
-                      <span className="ml-1.5 text-[10px] px-1 py-px rounded bg-zinc-800 text-zinc-500">{SRC_LABEL[x.source] ?? x.source}</span>
-                    </td>
-                    <td className="px-3 py-2 text-right">{x.calls}</td>
-                    <td className="px-3 py-2 text-right text-zinc-400">{x.wins}-{x.losses}</td>
-                    <td className="px-3 py-2 text-right">{x.winRate.toFixed(0)}%</td>
-                    <td className={`px-3 py-2 text-right font-medium ${x.avgRoi >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                      {x.avgRoi >= 0 ? "+" : ""}{x.avgRoi.toFixed(1)}%
-                    </td>
-                    <td className="px-3 py-2 text-right text-zinc-300">{fmtFollowers(x.followers)}</td>
-                    <td className="px-3 py-2">
-                      <div className="flex items-center gap-2">
-                        <div className="flex-1 h-1.5 rounded bg-zinc-800 overflow-hidden">
-                          <div className={`h-full ${trustCls(x.trustScore)}`} style={{ width: `${x.trustScore}%` }} />
+                {sortedTraders.slice(0, 20).map((x, i) => {
+                  const watched = watch.includes(`${x.source}:${x.author}`);
+                  return (
+                    <tr key={`${x.source}:${x.author}`} className="border-t border-zinc-800 hover:bg-zinc-900/60">
+                      <td className="px-3 py-2 text-zinc-500">{i + 1}</td>
+                      <td className="px-3 py-2 font-medium">
+                        <button onClick={() => setSearch(x.author)} className="hover:text-emerald-400 hover:underline" title={t("square.viewCalls")}>
+                          {x.author}
+                        </button>
+                        {x.verified && <span className="ml-1 text-sky-400">✓</span>}
+                        <span className="ml-1.5 text-[10px] px-1 py-px rounded bg-zinc-800 text-zinc-500">{SRC_LABEL[x.source] ?? x.source}</span>
+                      </td>
+                      <td className="px-3 py-2">
+                        <span className="inline-flex gap-1">
+                          <span className={`text-[10px] px-1.5 py-px rounded font-bold ${x.style === "Scalper" ? "bg-amber-500/15 text-amber-300" : x.style === "Swing" ? "bg-violet-500/15 text-violet-300" : "bg-zinc-800 text-zinc-500"}`}>
+                            {x.style ?? "-"}
+                          </span>
+                          <span className={`text-[10px] px-1.5 py-px rounded font-bold ${x.market === "Futures" ? "bg-yellow-500/15 text-yellow-300" : x.market === "Spot" ? "bg-sky-500/15 text-sky-300" : "bg-zinc-800 text-zinc-500"}`}>
+                            {x.market ?? "-"}
+                          </span>
+                          <span className={`text-[10px] px-1.5 py-px rounded font-bold ${x.bias === "Bull" ? "bg-emerald-500/15 text-emerald-300" : x.bias === "Bear" ? "bg-red-500/15 text-red-300" : "bg-zinc-800 text-zinc-500"}`}>
+                            {x.bias ?? "-"}
+                          </span>
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <span className="font-bold">{x.winRate.toFixed(0)}%</span>
+                        <span className="block h-1 rounded bg-zinc-800 overflow-hidden mt-0.5">
+                          <span className="block h-full bg-emerald-500" style={{ width: `${Math.round(x.winRate)}%` }} />
+                        </span>
+                      </td>
+                      <td className={`px-3 py-2 text-right font-bold ${x.totalRoi >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                        {x.totalRoi >= 0 ? "+" : ""}{x.totalRoi.toFixed(1)}%
+                      </td>
+                      <td className="px-3 py-2 text-right text-zinc-400">
+                        {x.avgHoldHours === null || x.avgHoldHours === undefined ? "-" : x.avgHoldHours < 1 ? `${Math.round(x.avgHoldHours * 60)}m` : x.avgHoldHours < 48 ? `${x.avgHoldHours.toFixed(1)}h` : `${(x.avgHoldHours / 24).toFixed(1)}d`}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <span className="text-emerald-400">{x.wins}</span>
+                        <span className="text-zinc-600">/</span>
+                        <span className="text-red-400">{x.losses}</span>
+                      </td>
+                      <td className="px-3 py-2 text-right text-zinc-300">{x.calls}</td>
+                      <td className="px-3 py-2 text-right text-zinc-300">{fmtFollowers(x.followers)}</td>
+                      <td className="px-3 py-2">
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 h-1.5 rounded bg-zinc-800 overflow-hidden">
+                            <div className={`h-full ${trustCls(x.trustScore)}`} style={{ width: `${x.trustScore}%` }} />
+                          </div>
+                          <span className="text-zinc-300 w-7 text-right">{x.trustScore}</span>
                         </div>
-                        <span className="text-zinc-300 w-7 text-right">{x.trustScore}</span>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <button onClick={() => toggleWatch(`${x.source}:${x.author}`)} className={watched ? "text-amber-400" : "text-zinc-600 hover:text-amber-300"} title={t("square.watch")}>
+                            {watched ? "★" : "☆"}
+                          </button>
+                          {x.source === "square" && (
+                            <a href={`https://www.binance.com/en/square/profile/${encodeURIComponent(x.author)}`} target="_blank" rel="noreferrer" className="text-zinc-600 hover:text-zinc-300" title={t("square.profile")}>👁</a>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

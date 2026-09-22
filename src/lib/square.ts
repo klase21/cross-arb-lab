@@ -31,6 +31,7 @@ export interface SquareSignal {
   roiPct: number | null;
   status: SquareStatus;
   closeReason: string | null;
+  closedAtMs?: number | null;
   views: number;
   likes: number;
   snippet: string;
@@ -46,10 +47,16 @@ export interface SquareTrader {
   losses: number;
   winRate: number;
   avgRoi: number;
+  totalRoi: number;
   trustScore: number;
   withStopPct: number;
   followers?: number | null;
   totalPosts?: number | null;
+  avgHoldHours?: number | null;
+  longPct?: number;
+  style?: "Scalper" | "Swing" | "Mixed";
+  bias?: "Bull" | "Bear" | "Mixed";
+  market?: "Spot" | "Futures" | "Mixed";
 }
 
 export interface RawSquarePost {
@@ -220,6 +227,29 @@ export function trustScore(calls: number, wins: number, losses: number, avgRoi: 
   return Math.round(Math.max(0, Math.min(100, raw * dampen)));
 }
 
+export function traderStyle(
+  signals: SquareSignal[],
+): { totalRoi: number; avgHoldHours: number | null; longPct: number; style: "Scalper" | "Swing" | "Mixed"; bias: "Bull" | "Bear" | "Mixed"; market: "Spot" | "Futures" | "Mixed" } {
+  const rois = signals.map(s => s.roiPct).filter((v): v is number => typeof v === "number" && Number.isFinite(v));
+  const totalRoi = rois.reduce((a, b) => a + b, 0);
+  const holds = signals
+    .filter(s => (s.status === "CLOSED_WIN" || s.status === "CLOSED_LOSS") && s.closedAtMs && s.closedAtMs > s.postMs)
+    .map(s => ((s.closedAtMs as number) - s.postMs) / 3600000);
+  const avgHoldHours = holds.length > 0 ? holds.reduce((a, b) => a + b, 0) / holds.length : null;
+  const longs = signals.filter(s => s.side === "LONG").length;
+  const longPct = signals.length > 0 ? (longs / signals.length) * 100 : 50;
+  const fut = signals.filter(s => s.market === "FUTURES").length;
+  const futPct = signals.length > 0 ? (fut / signals.length) * 100 : 0;
+  return {
+    totalRoi,
+    avgHoldHours,
+    longPct,
+    style: avgHoldHours === null ? "Mixed" : avgHoldHours <= 24 ? "Scalper" : "Swing",
+    bias: longPct >= 70 ? "Bull" : longPct <= 30 ? "Bear" : "Mixed",
+    market: futPct >= 70 ? "Futures" : futPct <= 30 ? "Spot" : "Mixed",
+  };
+}
+
 export function aggregateTraders(signals: SquareSignal[]): SquareTrader[] {
   const byAuthor = new Map<string, { signals: SquareSignal[]; verified: boolean }>();
   for (const s of signals) {
@@ -238,6 +268,7 @@ export function aggregateTraders(signals: SquareSignal[]): SquareTrader[] {
     const avgRoi = rois.length > 0 ? rois.reduce((a, b) => a + b, 0) / rois.length : 0;
     const withStop = g.signals.filter(s => s.stop !== null).length;
     const withStopPct = g.signals.length > 0 ? (withStop / g.signals.length) * 100 : 0;
+    const style = traderStyle(g.signals);
     out.push({
       author,
       verified: g.verified,
@@ -246,8 +277,14 @@ export function aggregateTraders(signals: SquareSignal[]): SquareTrader[] {
       losses,
       winRate: closed.length > 0 ? (wins / closed.length) * 100 : 0,
       avgRoi,
+      totalRoi: style.totalRoi,
       trustScore: trustScore(g.signals.length, wins, losses, avgRoi, withStopPct),
       withStopPct,
+      avgHoldHours: style.avgHoldHours,
+      longPct: style.longPct,
+      style: style.style,
+      bias: style.bias,
+      market: style.market,
     });
   }
   return out.sort((a, b) => b.trustScore - a.trustScore || b.calls - a.calls);
