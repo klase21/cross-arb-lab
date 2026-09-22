@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePollingInterval } from "@/lib/use-polling";
 import { useLang } from "@/lib/i18n";
+import CandleChart from "@/components/CandleChart";
 
 interface TaReason {
   code: string;
@@ -68,43 +69,10 @@ function rsiCls(v: number | null): string {
 }
 
 function Chart({ candles, reading }: { candles: Candle[]; reading: TaReading }) {
-  const W = 900;
-  const H = 300;
-  const PAD = 8;
-  const data = candles.slice(-120);
-  const lows = data.map(c => c.l);
-  const highs = data.map(c => c.h);
-  if (reading.bbUpper !== null) highs.push(reading.bbUpper);
-  if (reading.bbLower !== null) lows.push(reading.bbLower);
-  const min = Math.min(...lows);
-  const max = Math.max(...highs);
-  const span = max - min || 1;
-  const y = (p: number) => PAD + (1 - (p - min) / span) * (H - PAD * 2);
-  const cw = W / data.length;
-  const maxV = Math.max(...data.map(c => c.v), 1);
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-64 md:h-72 bg-zinc-950 rounded-lg border border-zinc-800">
-      {data.map((c, i) => {
-        const up = c.c >= c.o;
-        const col = up ? "#22c55e" : "#ef4444";
-        const x = i * cw + cw / 2;
-        const vh = (c.v / maxV) * H * 0.18;
-        return (
-          <g key={c.t}>
-            <rect x={i * cw + 1} y={H - vh} width={Math.max(cw - 2, 1)} height={vh} fill={col} opacity={0.25} />
-            <line x1={x} y1={y(c.h)} x2={x} y2={y(c.l)} stroke={col} strokeWidth={1} />
-            <rect
-              x={i * cw + cw * 0.2}
-              y={y(Math.max(c.o, c.c))}
-              width={Math.max(cw * 0.6, 1)}
-              height={Math.max(Math.abs(y(c.o) - y(c.c)), 1)}
-              fill={col}
-            />
-          </g>
-        );
-      })}
-    </svg>
-  );
+  const extraLevels: number[] = [];
+  if (reading.bbUpper !== null) extraLevels.push(reading.bbUpper);
+  if (reading.bbLower !== null) extraLevels.push(reading.bbLower);
+  return <CandleChart candles={candles} extraLevels={extraLevels} height={288} />;
 }
 
 export default function TaView() {

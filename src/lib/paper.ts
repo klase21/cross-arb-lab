@@ -35,10 +35,23 @@ export interface PaperAccount {
   startedUsd: number;
   positions: PaperPosition[];
   fills: PaperFill[];
+  pending: PendingOrder[];
   funding: FundingPosition[];
   fundingClosed: FundingClosed[];
   closedTrades: ClosedTrade[];
   updatedAt: number;
+}
+
+/** GTC limit order waiting for the market. */
+export interface PendingOrder {
+  id: string;
+  ts: number;
+  venue: PaperVenue;
+  coin: string;
+  side: PaperSide;
+  qty: number;
+  limitUsd: number;
+  note?: string;
 }
 
 export interface FundingPosition {
@@ -80,7 +93,7 @@ const MS_PER_YEAR = 365 * 24 * 3600 * 1000;
 const STORAGE_KEY = "paperAccount";
 
 export function newAccount(startedUsd: number): PaperAccount {
-  return { cashUsd: startedUsd, startedUsd, positions: [], fills: [], funding: [], fundingClosed: [], closedTrades: [], updatedAt: Date.now() };
+  return { cashUsd: startedUsd, startedUsd, positions: [], fills: [], pending: [], funding: [], fundingClosed: [], closedTrades: [], updatedAt: Date.now() };
 }
 
 function uid(): string {
@@ -214,6 +227,7 @@ export function loadAccount(): PaperAccount | null {
     if (!Array.isArray(parsed.funding)) parsed.funding = [];
     if (!Array.isArray(parsed.fundingClosed)) parsed.fundingClosed = [];
     if (!Array.isArray(parsed.closedTrades)) parsed.closedTrades = [];
+    if (!Array.isArray((parsed as { pending?: unknown }).pending)) parsed.pending = [];
     return parsed;
   } catch {
     return null;
@@ -250,6 +264,103 @@ export function consumeDraft(): string | null {
   } catch {
     return null;
   }
+}
+
+/** Place a GTC limit order. Funds/inventory are checked at match time, but
+ * obviously insufficient orders are rejected upfront. */
+export function executeLimit(
+  account: PaperAccount,
+  quote: PaperQuote,
+  side: PaperSide,
+  qty: number,
+  limitUsd: number,
+  note?: string,
+): { account: PaperAccount; order: PendingOrder } | { error: string } {
+  if (!(qty > 0) || !Number.isFinite(qty)) return { error: "qty" };
+  if (!(limitUsd > 0) || !Number.isFinite(limitUsd)) return { error: "price" };
+  const feeRate = PAPER_FEES[quote.venue];
+  if (side === "buy" && qty * limitUsd * (1 + feeRate) > account.cashUsd + 1e-9) return { error: "cash" };
+  if (side === "sell") {
+    const pos = account.positions.find(p => p.venue === quote.venue && p.coin === quote.coin);
+    if (!pos || pos.qty < qty - 1e-12) return { error: "position" };
+  }
+  const order: PendingOrder = {
+    id: uid(), ts: Date.now(), venue: quote.venue, coin: quote.coin,
+    side, qty, limitUsd, note,
+  };
+  return {
+    account: { ...account, pending: [order, ...account.pending].slice(0, 100), updatedAt: Date.now() },
+    order,
+  };
+}
+
+export function cancelOrder(
+  account: PaperAccount,
+  orderId: string,
+): { account: PaperAccount } | { error: string } {
+  if (!account.pending.some(o => o.id === orderId)) return { error: "position" };
+  return {
+    account: { ...account, pending: account.pending.filter(o => o.id !== orderId), updatedAt: Date.now() },
+  };
+}
+
+/** Fill crossing limit orders against a fresh bid/ask. Buy fills when ask <=
+ * limit, sell fills when bid >= limit. Settles at the limit price. */
+export function matchLimitOrders(
+  account: PaperAccount,
+  quote: PaperQuote,
+): { account: PaperAccount; fills: PaperFill[] } {
+  if (account.pending.length === 0) return { account, fills: [] };
+  const acc: PaperAccount = {
+    ...account,
+    positions: account.positions.map(p => ({ ...p })),
+    fills: [...account.fills],
+    closedTrades: [...account.closedTrades],
+    pending: [...account.pending],
+  };
+  const fills: PaperFill[] = [];
+  for (const order of [...acc.pending]) {
+    if (order.venue !== quote.venue || order.coin !== quote.coin) continue;
+    const crossed = order.side === "buy" ? quote.askUsd <= order.limitUsd : quote.bidUsd >= order.limitUsd;
+    if (!crossed) continue;
+    const feeRate = PAPER_FEES[order.venue];
+    if (order.side === "buy") {
+      const gross = order.qty * order.limitUsd;
+      const fee = gross * feeRate;
+      if (gross + fee > acc.cashUsd + 1e-9) continue; // cash moved — leave resting
+      acc.cashUsd -= gross + fee;
+      const pos = acc.positions.find(p => p.venue === order.venue && p.coin === order.coin);
+      if (pos) {
+        pos.avgPriceUsd = (pos.avgPriceUsd * pos.qty + gross) / (pos.qty + order.qty);
+        pos.qty += order.qty;
+      } else {
+        acc.positions.push({ venue: order.venue, coin: order.coin, qty: order.qty, avgPriceUsd: order.limitUsd, realizedPnlUsd: 0 });
+      }
+      fills.unshift({ id: uid(), ts: Date.now(), venue: order.venue, coin: order.coin, side: "buy", qty: order.qty, priceUsd: order.limitUsd, feeUsd: fee, note: order.note });
+    } else {
+      const pos = acc.positions.find(p => p.venue === order.venue && p.coin === order.coin);
+      if (!pos || pos.qty < order.qty - 1e-12) continue;
+      const gross = order.qty * order.limitUsd;
+      const fee = gross * feeRate;
+      acc.cashUsd += gross - fee;
+      pos.realizedPnlUsd += (order.limitUsd - pos.avgPriceUsd) * order.qty - fee;
+      pos.qty -= order.qty;
+      const closed = pos.qty <= 1e-12;
+      acc.positions = acc.positions.filter(p => p.qty > 1e-12);
+      fills.unshift({ id: uid(), ts: Date.now(), venue: order.venue, coin: order.coin, side: "sell", qty: order.qty, priceUsd: order.limitUsd, feeUsd: fee, note: order.note });
+      if (closed) {
+        acc.closedTrades.unshift({
+          id: uid(), venue: order.venue, coin: order.coin,
+          qty: order.qty, realizedPnlUsd: pos.realizedPnlUsd, closedAt: Date.now(),
+        });
+        acc.closedTrades = acc.closedTrades.slice(0, 300);
+      }
+    }
+    acc.pending = acc.pending.filter(o => o.id !== order.id);
+    acc.fills = [fills[0], ...acc.fills].slice(0, 300);
+  }
+  acc.updatedAt = Date.now();
+  return { account: acc, fills };
 }
 
 /** Pair (inventory-hedge) trade: buy on one venue while simultaneously selling
