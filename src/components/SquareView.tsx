@@ -329,6 +329,24 @@ export default function SquareView() {
     } catch {}
   };
 
+  const trackAllSuggestions = async () => {
+    setTrackMsg(null);
+    let done = 0;
+    for (const s of suggestions) {
+      if (!s.uid) continue;
+      try {
+        const res = await fetch("/api/square/track", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ input: s.uid }),
+        });
+        if (res.ok) done++;
+      } catch {}
+    }
+    setTrackMsg(done > 0 ? t("square.trackAdded") : t("square.trackFail"));
+    void load();
+  };
+
   const stats = useMemo(() => {
     const withClosed = traders.filter(x => x.wins + x.losses > 0);
     const avgWin = withClosed.length > 0 ? withClosed.reduce((a, x) => a + x.winRate, 0) / withClosed.length : 0;
@@ -385,6 +403,9 @@ export default function SquareView() {
             className="px-2.5 py-1 rounded-md text-xs bg-zinc-900 border border-zinc-700 text-zinc-200 placeholder:text-zinc-600 w-64"
           />
           <button onClick={() => void addTracked(trackInput)} className={selBtn(false)}>+ {t("square.trackAdd")}</button>
+          {suggestions.length > 0 && (
+            <button onClick={() => void trackAllSuggestions()} className={selBtn(false)}>⚡ {t("square.trackAll")}</button>
+          )}
           {trackMsg && <span className="text-[11px] text-amber-300">{trackMsg}</span>}
         </div>
         {(tracked.length > 0 || suggestions.length > 0) && (
