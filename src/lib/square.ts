@@ -16,6 +16,7 @@ export interface SquareSignal {
   author: string;
   authorVerified: boolean;
   authorId?: string | null;
+  avatar?: string | null;
   asset: string;
   symbol: string;
   side: SquareSide;
@@ -42,6 +43,7 @@ export interface SquareSignal {
 export interface SquareTrader {
   author: string;
   verified: boolean;
+  avatar?: string | null;
   calls: number;
   wins: number;
   losses: number;
@@ -64,6 +66,7 @@ export interface RawSquarePost {
   author: string;
   verified: boolean;
   squareAuthorId?: string | null;
+  avatar?: string | null;
   title: string;
   content: string;
   coinPairs: string[];
@@ -251,12 +254,13 @@ export function traderStyle(
 }
 
 export function aggregateTraders(signals: SquareSignal[]): SquareTrader[] {
-  const byAuthor = new Map<string, { signals: SquareSignal[]; verified: boolean }>();
+  const byAuthor = new Map<string, { signals: SquareSignal[]; verified: boolean; avatar: string | null }>();
   for (const s of signals) {
     if (s.confidence === "low") continue;
-    const g = byAuthor.get(s.author) ?? { signals: [], verified: false };
+    const g = byAuthor.get(s.author) ?? { signals: [], verified: false, avatar: null };
     g.signals.push(s);
     g.verified = g.verified || s.authorVerified;
+    if (!g.avatar && s.avatar) g.avatar = s.avatar;
     byAuthor.set(s.author, g);
   }
   const out: SquareTrader[] = [];
@@ -272,6 +276,7 @@ export function aggregateTraders(signals: SquareSignal[]): SquareTrader[] {
     out.push({
       author,
       verified: g.verified,
+      avatar: g.avatar ?? null,
       calls: g.signals.length,
       wins,
       losses,

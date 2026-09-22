@@ -34,6 +34,7 @@ interface SquareVo {
   authorName?: string;
   authorIsVerified?: boolean;
   squareAuthorId?: string | null;
+  authorAvatar?: string | null;
   title?: string | null;
   content?: string | null;
   coinPairList?: string[] | null;
@@ -56,6 +57,7 @@ function parseVo(v: SquareVo): RawSquarePost {
     author: v.authorName ?? "unknown",
     verified: v.authorIsVerified === true,
     squareAuthorId: v.squareAuthorId ?? null,
+    avatar: typeof v.authorAvatar === "string" ? v.authorAvatar : null,
     title: v.title ?? "",
     content: v.content ?? "",
     coinPairs: Array.isArray(v.coinPairList) ? v.coinPairList : [],
@@ -105,14 +107,14 @@ export async function GET() {
       const sql = neon(process.env.DATABASE_URL);
       const rows = (await sql`
         SELECT id, author, verified, square_author_id, title, content,
-               coin_pairs, hashtags, views, likes, post_ms, url
+               coin_pairs, hashtags, views, likes, post_ms, url, avatar
         FROM square_posts
         WHERE collected_at > now() - interval '7 days'
         ORDER BY collected_at DESC
         LIMIT 600`) as {
         id: string; author: string; verified: boolean; square_author_id: string | null;
         title: string; content: string; coin_pairs: string[]; hashtags: string[];
-        views: number; likes: number; post_ms: string | number; url: string;
+        views: number; likes: number; post_ms: string | number; url: string; avatar: string | null;
       }[];
       if (rows.length > 0) {
         fromDb = true;
@@ -121,6 +123,7 @@ export async function GET() {
           author: r.author,
           verified: r.verified === true,
           squareAuthorId: r.square_author_id,
+          avatar: r.avatar ?? null,
           title: r.title ?? "",
           content: r.content ?? "",
           coinPairs: Array.isArray(r.coin_pairs) ? r.coin_pairs : [],
@@ -175,6 +178,7 @@ export async function GET() {
       author: post.author,
       authorVerified: post.verified,
       authorId: post.squareAuthorId ?? null,
+      avatar: post.avatar ?? null,
       asset,
       symbol: `${asset}USDT`,
       side,

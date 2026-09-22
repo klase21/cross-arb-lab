@@ -64,6 +64,7 @@ async function ensureTable(sql) {
     )`;
   await sql`CREATE INDEX IF NOT EXISTS idx_square_posts_collected ON square_posts (collected_at DESC)`;
   await sql`CREATE INDEX IF NOT EXISTS idx_square_posts_author ON square_posts (square_author_id)`;
+  await sql`ALTER TABLE square_posts ADD COLUMN IF NOT EXISTS avatar TEXT NOT NULL DEFAULT ''`;
   await sql`
     CREATE TABLE IF NOT EXISTS tracked_traders (
       square_uid TEXT PRIMARY KEY,
@@ -156,18 +157,20 @@ async function fetchAuthorProfile(squareUid) {
     const pairs = Array.isArray(v.coinPairList) ? v.coinPairList.map(String).slice(0, 10) : [];
     const tags = Array.isArray(v.hashtagList) ? v.hashtagList.map(String).slice(0, 10) : [];
     const url = v.webLink ?? `https://www.binance.com/en/square/post/${id}`;
+    const avatar = typeof v.authorAvatar === "string" ? v.authorAvatar.slice(0, 300) : "";
     const r = await sql`
-      INSERT INTO square_posts (id, author, verified, square_author_id, title, content, coin_pairs, hashtags, views, likes, post_ms, url)
+      INSERT INTO square_posts (id, author, verified, square_author_id, title, content, coin_pairs, hashtags, views, likes, post_ms, url, avatar)
       VALUES (
         ${id}, ${String(v.authorName ?? v.displayName ?? v.username ?? "unknown")}, ${v.authorIsVerified === true || (v.authorVerificationType ?? 0) > 0},
         ${v.squareAuthorId ? String(v.squareAuthorId) : null},
         ${String(v.title ?? "")}, ${String(v.content ?? "")},
         ${pairs}, ${tags},
         ${Number(v.viewCount) || 0}, ${Number(v.likeCount) || 0},
-        ${toMs(v.date ?? v.createTime)}, ${url}
+        ${toMs(v.date ?? v.createTime)}, ${url}, ${avatar}
       )
       ON CONFLICT (id) DO UPDATE SET
-        views = EXCLUDED.views, likes = EXCLUDED.likes, collected_at = now()
+        views = EXCLUDED.views, likes = EXCLUDED.likes, collected_at = now(),
+        avatar = CASE WHEN EXCLUDED.avatar <> '' THEN EXCLUDED.avatar ELSE square_posts.avatar END
       RETURNING (xmax = 0) AS is_new`;
     if (r.length > 0 && r[0].is_new) inserted++;
     else updated++;
