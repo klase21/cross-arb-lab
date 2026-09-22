@@ -9,7 +9,6 @@ import SquareView from "@/components/SquareView";
 import TaView from "@/components/TaView";
 import FuturesView from "@/components/FuturesView";
 import PaperView from "@/components/PaperView";
-import SniperView from "@/components/SniperView";
 import PaperAutoRunner from "@/components/PaperAutoRunner";
 import { LangProvider, useLang } from "@/lib/i18n";
 
@@ -17,7 +16,6 @@ const TAB_DEFS = [
   { id: "kimchi" as const, labelKey: "tab.kimchi.label", titleKey: "tab.kimchi.title", descKey: "tab.kimchi.desc" },
   { id: "arbitrage" as const, labelKey: "tab.arbitrage.label", titleKey: "tab.arbitrage.title", descKey: "tab.arbitrage.desc" },
   { id: "cex" as const, labelKey: "tab.cex.label", titleKey: "tab.cex.title", descKey: "tab.cex.desc" },
-  { id: "sniper" as const, labelKey: "tab.sniper.label", titleKey: "tab.sniper.title", descKey: "tab.sniper.desc" },
   { id: "square" as const, labelKey: "tab.square.label", titleKey: "tab.square.title", descKey: "tab.square.desc" },
   { id: "ta" as const, labelKey: "tab.ta.label", titleKey: "tab.ta.title", descKey: "tab.ta.desc" },
   { id: "futures" as const, labelKey: "tab.futures.label", titleKey: "tab.futures.title", descKey: "tab.futures.desc" },
@@ -74,7 +72,6 @@ function HomeInner() {
         {tab === "kimchi" && <KimchiView />}
         {tab === "arbitrage" && <DexArbitrageView />}
         {tab === "cex" && <CexCexView />}
-        {tab === "sniper" && <SniperView />}
         {tab === "square" && <SquareView />}
         {tab === "ta" && <TaView />}
         {tab === "futures" && <FuturesView />}
