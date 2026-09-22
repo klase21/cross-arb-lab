@@ -39,11 +39,13 @@ interface KimchiItem {
 }
 
 function formatGlobalPrice(value: number) {
-  return value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 5 });
+  if (value >= 1) return value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 6 });
 }
 
 function formatKrw(value: number) {
-  return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 5 });
+  if (value >= 1000) return Math.round(value).toLocaleString();
+  return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 type SortKey = "premium" | "roundTrip" | "cmcDev" | "coin" | "risk" | "opportunity";
@@ -499,21 +501,21 @@ export default function KimchiView() {
       </div>
 
       <div className="hidden md:block rounded-xl border border-zinc-800 overflow-x-auto">
-        <table className="w-full text-sm min-w-[1360px] table-fixed">
+        <table className="w-full text-sm min-w-[1210px] table-fixed">
           <colgroup>
-            <col style={{ width: 170 }} />
-            <col style={{ width: 85 }} />
-            <col style={{ width: 120 }} />
-            <col style={{ width: 115 }} />
-            <col style={{ width: 95 }} />
-            <col style={{ width: 95 }} />
-            <col style={{ width: 115 }} />
-            <col style={{ width: 95 }} />
-            <col style={{ width: 85 }} />
+            <col style={{ width: 150 }} />
+            <col style={{ width: 60 }} />
+            <col style={{ width: 80 }} />
+            <col style={{ width: 105 }} />
+            <col style={{ width: 100 }} />
+            <col style={{ width: 100 }} />
+            <col style={{ width: 105 }} />
+            <col style={{ width: 90 }} />
+            <col style={{ width: 72 }} />
+            <col style={{ width: 62 }} />
             <col style={{ width: 70 }} />
-            <col style={{ width: 80 }} />
-            <col style={{ width: 80 }} />
-            <col style={{ width: 155 }} />
+            <col style={{ width: 78 }} />
+            <col style={{ width: 135 }} />
           </colgroup>
           <thead>
             <tr className="bg-zinc-900/80 text-zinc-500 text-xs">
@@ -593,7 +595,7 @@ export default function KimchiView() {
                     </button>
                     {(() => {
                       const displayName = lang === "ko" ? item.nameKr : (item.nameEn || item.nameKr);
-                      return displayName !== item.coin ? <Link href={`/kimchi/${encodeURIComponent(item.coin)}`} className="ml-2 text-xs text-zinc-500 hover:text-emerald-400 hover:underline inline-block max-w-[92px] truncate align-middle" title={displayName}>{displayName}</Link> : null;
+                      return displayName !== item.coin ? <Link href={`/kimchi/${encodeURIComponent(item.coin)}`} className="ml-2 text-xs text-zinc-500 hover:text-emerald-400 hover:underline inline-block max-w-[64px] truncate align-middle" title={displayName}>{displayName}</Link> : null;
                     })()}
                     {item.binanceSymbol && item.binanceSource !== "gate" && (
                       <p className="text-[10px] text-cyan-400/80 font-mono mt-0.5" title="Binance uses a different ticker for this coin (resolved via CoinMarketCap)">
@@ -609,7 +611,7 @@ export default function KimchiView() {
                       <p className="text-[10px] text-cyan-400/80 font-mono mt-0.5" title="Trades on Binance Alpha (pre-spot listing), price via CoinMarketCap">Binance Alpha</p>
                     )}
                   </td>
-                  <td className="text-right px-4 py-2.5 font-mono text-zinc-400 text-xs whitespace-nowrap">
+                  <td className="text-right px-2 py-2.5 font-mono text-zinc-400 text-xs whitespace-nowrap">
                     {item.volumeKrw ? (
                       lang === "ko"
                         ? (item.volumeKrw >= 1_000_000_000 ? `${(item.volumeKrw / 1_000_000_000).toFixed(1)}B` : `${(item.volumeKrw / 100_000_000).toFixed(1)}억`)
@@ -619,17 +621,17 @@ export default function KimchiView() {
                   <td className="text-center px-2 py-2.5">
                     <Sparkline data={(mergedHistory[item.coin] ?? []).map(point => point.premium)} zScore={computeZScore(mergedHistory[item.coin])} />
                   </td>
-                  <td className="text-right px-4 py-2.5 font-mono text-zinc-200 whitespace-nowrap" title={item.upbitAsk ? (lang === "ko" ? `매수 Ask: ${formatKrw(item.upbitAsk)} / 매도 Bid: ${formatKrw(item.upbitBid ?? item.upbitKrw)}` : `Ask: ${formatKrw(item.upbitAsk)} / Bid: ${formatKrw(item.upbitBid ?? item.upbitKrw)}`) : undefined}>
+                  <td className="text-right px-2 py-2.5 font-mono text-zinc-200 whitespace-nowrap" title={item.upbitAsk ? (lang === "ko" ? `매수 Ask: ${formatKrw(item.upbitAsk)} / 매도 Bid: ${formatKrw(item.upbitBid ?? item.upbitKrw)}` : `Ask: ${formatKrw(item.upbitAsk)} / Bid: ${formatKrw(item.upbitBid ?? item.upbitKrw)}`) : undefined}>
                     {formatKrw(item.upbitKrw)}
                     {item.upbitAsk && item.upbitAsk !== item.upbitKrw && <div className="text-[10px] text-zinc-500">Ask {formatKrw(item.upbitAsk)}</div>}
                   </td>
-                  <td className="text-right px-4 py-2.5 font-mono text-zinc-400 whitespace-nowrap">${formatGlobalPrice(upbitUsd)}</td>
-                  <td className="text-right px-4 py-2.5 font-mono text-zinc-400 whitespace-nowrap" title={item.globalBid ? (lang === "ko" ? `매수 Ask: $${formatGlobalPrice(item.globalAsk ?? item.globalUsd)} / 매도 Bid: $${formatGlobalPrice(item.globalBid)}` : `Ask: $${formatGlobalPrice(item.globalAsk ?? item.globalUsd)} / Bid: $${formatGlobalPrice(item.globalBid)}`) : undefined}>
+                  <td className="text-right px-2 py-2.5 font-mono text-zinc-400 whitespace-nowrap">${formatGlobalPrice(upbitUsd)}</td>
+                  <td className="text-right px-2 py-2.5 font-mono text-zinc-400 whitespace-nowrap" title={item.globalBid ? (lang === "ko" ? `매수 Ask: $${formatGlobalPrice(item.globalAsk ?? item.globalUsd)} / 매도 Bid: $${formatGlobalPrice(item.globalBid)}` : `Ask: $${formatGlobalPrice(item.globalAsk ?? item.globalUsd)} / Bid: $${formatGlobalPrice(item.globalBid)}`) : undefined}>
                     ${formatGlobalPrice(item.globalUsd)}
                     {item.globalBid && item.globalBid !== item.globalUsd && <div className="text-[10px] text-zinc-500">Bid ${formatGlobalPrice(item.globalBid)}</div>}
                   </td>
-                  <td className="text-right px-4 py-2.5 font-mono text-zinc-200 whitespace-nowrap">{formatKrw(globalKrw)}</td>
-                  <td className={`text-right px-4 py-2.5 font-mono text-xs whitespace-nowrap ${item.binanceDevPct === undefined ? "text-zinc-600" : item.verified ? "text-emerald-400" : item.binanceDevPct <= 20 ? "text-amber-400" : "text-red-400"}`} title={[
+                  <td className="text-right px-2 py-2.5 font-mono text-zinc-200 whitespace-nowrap">{formatKrw(globalKrw)}</td>
+                  <td className={`text-right px-2 py-2.5 font-mono text-xs whitespace-nowrap ${item.binanceDevPct === undefined ? "text-zinc-600" : item.verified ? "text-emerald-400" : item.binanceDevPct <= 20 ? "text-amber-400" : "text-red-400"}`} title={[
                       item.cmcUsd !== undefined ? `CMC: $${formatGlobalPrice(item.cmcUsd)}` : null,
                       item.binanceDevPct !== undefined ? `Binance 대비 오차 ${item.binanceDevPct.toFixed(2)}%` : null,
                       item.binanceOnCmc === true ? "CMC 프로젝트 페이지에 Binance 있음" : item.binanceOnCmc === false ? "CMC 프로젝트 페이지에 Binance 없음 — 동명 티커 의심" : null,
@@ -638,7 +640,7 @@ export default function KimchiView() {
                     {item.binanceOnCmc === false && <div className="text-[10px] text-red-400" title={lang === "ko" ? "CMC 프로젝트 페이지에 Binance 마켓이 없어 동일 티커의 다른 코인일 가능성이 높습니다" : "No Binance market on CMC project page — likely a different coin with same ticker"}>{lang === "ko" ? "Binance 없음" : "No Binance"}</div>}
                     {item.binanceOnCmc === true && item.binanceDevPct !== undefined && item.binanceDevPct > 5 && <div className="text-[10px] text-emerald-300">{lang === "ko" ? "Binance 있음" : "Has Binance"}</div>}
                   </td>
-                  <td className={`text-right px-4 py-2.5 font-mono font-semibold whitespace-nowrap ${positive ? (strong ? "text-red-400" : "text-red-300") : "text-sky-300"}`}>
+                  <td className={`text-right px-2 py-2.5 font-mono font-semibold whitespace-nowrap ${positive ? (strong ? "text-red-400" : "text-red-300") : "text-sky-300"}`}>
                     {positive ? "+" : ""}{item.premiumPct.toFixed(2)}%
                   </td>
                   <td className="text-center px-3 py-2.5">
@@ -703,13 +705,13 @@ export default function KimchiView() {
                       </span>
                     )}
                   </td>
-                  <td className={`text-right px-4 py-2.5 pr-5 font-mono whitespace-nowrap ${!trip ? "text-zinc-600" : trip.netProfitKrw >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                  <td className={`text-right px-2 py-2.5 pr-3 font-mono whitespace-nowrap ${!trip ? "text-zinc-600" : trip.netProfitKrw >= 0 ? "text-emerald-400" : "text-red-400"}`}>
                     {!trip ? "-" : (
                       <>
                         <span className="font-semibold">
                           {displayCurrency === "USD"
                             ? `${trip.netProfitKrw >= 0 ? "+" : ""}$${(Math.abs(trip.netProfitKrw) / (fxRate || 1350)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                            : `${trip.netProfitKrw >= 0 ? "+" : ""}${trip.netProfitKrw.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} KRW`}
+                            : `${trip.netProfitKrw >= 0 ? "+" : ""}${Math.round(trip.netProfitKrw).toLocaleString()} KRW`}
                         </span>
                         <span className="ml-1 text-[10px] opacity-80">({trip.netProfitPct >= 0 ? "+" : ""}{trip.netProfitPct.toFixed(2)}%)</span>
                         <p className="text-[10px] font-normal text-zinc-500">
