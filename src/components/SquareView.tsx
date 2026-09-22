@@ -82,11 +82,12 @@ function fmtPrice(n: number | null): string {
   return n.toPrecision(4);
 }
 
-function fmtAge(ms: number, lang: string): string {
-  const h = Math.max(1, Math.floor((Date.now() - ms) / 3600000));
-  if (h < 24) return lang === "ko" ? `${h}시간 전` : `${h}h ago`;
-  const d = Math.floor(h / 24);
-  return lang === "ko" ? `${d}일 전` : `${d}d ago`;
+function fmtAgeShort(ms: number): string {
+  const mins = Math.max(1, Math.floor((Date.now() - ms) / 60000));
+  if (mins < 60) return `${mins}m`;
+  const h = Math.floor(mins / 60);
+  if (h < 48) return `${h}h`;
+  return `${Math.floor(h / 24)}d`;
 }
 
 function trustCls(score: number): string {
@@ -290,6 +291,12 @@ export default function SquareView() {
     }
     return traders;
   }, [traders, leaderSort]);
+
+  const leadersByKey = useMemo(() => {
+    const map = new Map<string, { avatar?: string | null }>();
+    for (const x of traders) map.set(`${x.source}:${x.author}`, { avatar: x.avatar });
+    return map;
+  }, [traders]);
 
   // Per-asset aggregation (markets view): calls, win rate, ROI, bias, top trader.
   const assets = useMemo(() => {
@@ -698,44 +705,88 @@ export default function SquareView() {
             </table>
           </div>
         ) : (
-          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-            {filtered.slice(0, visibleCount).map(s => (
-              <div
-                key={s.id}
-                onClick={() => setSelected(s)}
-                className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-3 hover:border-zinc-500 transition-colors cursor-pointer"
-              >
-                <div className="flex items-center gap-1.5 flex-wrap mb-1.5">
-                  <span className="font-bold text-sm">${s.asset}</span>
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${s.side === "LONG" ? "bg-emerald-500/15 text-emerald-300" : "bg-red-500/15 text-red-300"}`}>{s.side}</span>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-500">{SRC_LABEL[s.source ?? "square"] ?? "SQ"}</span>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">{s.market}{s.leverage ? ` ${s.leverage}x` : ""}</span>
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded ${s.confidence === "high" ? "bg-sky-500/15 text-sky-300" : s.confidence === "medium" ? "bg-amber-500/15 text-amber-300" : "bg-zinc-800 text-zinc-500"}`}>
-                    {t(`square.conf.${s.confidence}`)}
-                  </span>
-                  {s.ai && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-500/15 text-violet-300" title="LLM refined">AI</span>
-                  )}
-                  <span className={`ml-auto text-sm font-bold ${s.roiPct === null ? "text-zinc-500" : s.roiPct >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                    {s.roiPct === null ? "-" : `${s.roiPct >= 0 ? "+" : ""}${s.roiPct.toFixed(1)}%`}
-                  </span>
-                </div>
-                <p className="text-[11px] text-zinc-400 line-clamp-2 mb-2">{s.snippet}</p>
-                <div className="flex items-center gap-2 text-[11px] text-zinc-500 flex-wrap">
-                  <span>{t("square.entry")}: <b className="text-zinc-300">{s.entry !== null ? fmtPrice(s.entry) : `@${fmtPrice(s.postPrice)}`}</b></span>
-                  {s.target !== null && <span>TP: <b className="text-zinc-300">{fmtPrice(s.target)}</b></span>}
-                  {s.stop !== null && <span>SL: <b className="text-zinc-300">{fmtPrice(s.stop)}</b></span>}
-                  <span className={`px-1.5 py-0.5 rounded ${
-                    s.status === "CLOSED_WIN" ? "bg-emerald-500/15 text-emerald-300" :
-                    s.status === "CLOSED_LOSS" ? "bg-red-500/15 text-red-300" :
-                    s.status === "LIVE" ? "bg-sky-500/15 text-sky-300" : "bg-zinc-800 text-zinc-400"
-                  }`}>
-                    {t(`square.status.${s.status === "CLOSED_WIN" || s.status === "CLOSED_LOSS" ? "closed" : s.status.toLowerCase()}`)}{s.closeReason ? ` · ${s.closeReason}` : ""}
-                  </span>
-                  <span className="ml-auto">{s.author} · {fmtAge(s.postMs, lang)} · 👁 {s.views}</span>
-                </div>
-              </div>
-            ))}
+          <div className="overflow-x-auto rounded-lg border border-zinc-800">
+            <table className="w-full text-xs min-w-[880px]">
+              <thead>
+                <tr className="bg-zinc-900 text-zinc-400 text-left">
+                  <th className="px-3 py-2">{t("ta.coin")}</th>
+                  <th className="px-3 py-2">{t("square.direction")}</th>
+                  <th className="px-3 py-2 text-right">{t("square.entry")}</th>
+                  <th className="px-3 py-2 text-right">{t("square.current")}</th>
+                  <th className="px-3 py-2 text-right">
+                    <button onClick={() => setSort(sort === "roi" ? "recent" : "roi")} className="hover:text-zinc-200" title={t("square.sortTip")}>
+                      ROI {sort === "roi" ? "↓" : sort === "recent" ? "·" : ""}
+                    </button>
+                  </th>
+                  <th className="px-3 py-2">{t("square.statusTitle")}</th>
+                  <th className="px-3 py-2">{t("square.marketTitle")}</th>
+                  <th className="px-3 py-2">{t("square.trader")}</th>
+                  <th className="px-3 py-2 text-right">
+                    <button onClick={() => setSort(sort === "recent" ? "roi" : "recent")} className="hover:text-zinc-200" title={t("square.sortTip")}>
+                      {t("square.age")} {sort === "recent" ? "↓" : ""}
+                    </button>
+                  </th>
+                  <th className="px-3 py-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.slice(0, visibleCount).map(s => {
+                  const watched = watch.includes(`${s.source ?? "square"}:${s.author}`);
+                  return (
+                    <tr
+                      key={s.id}
+                      onClick={() => setSelected(s)}
+                      className="border-t border-zinc-800 hover:bg-zinc-900/60 cursor-pointer"
+                    >
+                      <td className="px-3 py-2 font-bold whitespace-nowrap">
+                        ${s.asset}
+                        <span className="ml-1.5 text-[10px] px-1 py-px rounded bg-zinc-800 text-zinc-500 font-normal">{SRC_LABEL[s.source ?? "square"] ?? "SQ"}</span>
+                      </td>
+                      <td className="px-3 py-2">
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${s.side === "LONG" ? "bg-emerald-500/15 text-emerald-300" : "bg-red-500/15 text-red-300"}`}>
+                          {s.side === "LONG" ? t("square.buy") : t("square.sell")}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono text-zinc-300">{s.entry !== null ? fmtPrice(s.entry) : `@${fmtPrice(s.postPrice)}`}</td>
+                      <td className="px-3 py-2 text-right font-mono text-zinc-300">{fmtPrice(s.curPrice)}</td>
+                      <td className={`px-3 py-2 text-right font-mono font-bold ${s.roiPct === null ? "text-zinc-600" : s.roiPct >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                        {s.roiPct === null ? "-" : `${s.roiPct >= 0 ? "+" : ""}${s.roiPct.toFixed(2)}%`}
+                      </td>
+                      <td className="px-3 py-2">
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold whitespace-nowrap ${
+                          s.status === "CLOSED_WIN" ? "bg-emerald-500/15 text-emerald-300" :
+                          s.status === "CLOSED_LOSS" ? "bg-red-500/15 text-red-300" :
+                          s.status === "LIVE" ? "bg-emerald-500/15 text-emerald-300" : "bg-amber-500/15 text-amber-300"
+                        }`}>
+                          {s.status === "LIVE" ? "● LIVE" : s.status === "OPEN" ? t("square.status.open") : t("square.status.closed")}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2">
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 whitespace-nowrap">{s.market}{s.leverage ? ` ${s.leverage}x` : ""}</span>
+                      </td>
+                      <td className="px-3 py-2 text-zinc-300 whitespace-nowrap">
+                        <span className="inline-flex items-center gap-1.5">
+                          {(leadersByKey.get(`${s.source ?? "square"}:${s.author}`)?.avatar)
+                            // eslint-disable-next-line @next/next/no-img-element -- external bnbstatic avatars; next/image would bill Vercel optimizer bandwidth
+                            ? <img src={leadersByKey.get(`${s.source ?? "square"}:${s.author}`)?.avatar as string} alt="" className="w-5 h-5 rounded-full object-cover" loading="lazy" />
+                            : null}
+                          {s.author}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 text-right text-zinc-500 whitespace-nowrap">{fmtAgeShort(s.postMs)}</td>
+                      <td className="px-3 py-2 text-right">
+                        <button
+                          onClick={e => { e.stopPropagation(); toggleWatch(`${s.source ?? "square"}:${s.author}`); }}
+                          className={watched ? "text-amber-400" : "text-zinc-600 hover:text-amber-300"}
+                        >
+                          {watched ? "★" : "☆"}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
         {viewMode === "signals" && filtered.length > visibleCount && (
@@ -750,6 +801,8 @@ export default function SquareView() {
         <SignalModal
           key={selected.id}
           signal={selected}
+          signals={signals}
+          traders={traders}
           t={t}
           lang={lang}
           onClose={() => setSelected(null)}
@@ -759,8 +812,89 @@ export default function SquareView() {
   );
 }
 
-function SignalModal({ signal: s, t, lang, onClose }: {
+interface Candle {
+  t: number;
+  o: number;
+  h: number;
+  l: number;
+  c: number;
+  v: number;
+}
+
+function CandleChart({ candles, entry, target, stop }: {
+  candles: Candle[];
+  entry: number | null;
+  target: number | null;
+  stop: number | null;
+}) {
+  const W = 760;
+  const H = 260;
+  const PAD = 8;
+  const data = candles.slice(-100);
+  if (data.length < 2) return <p className="text-xs text-zinc-600">-</p>;
+  const lows = data.map(c => c.l);
+  const highs = data.map(c => c.h);
+  for (const v of [entry, target, stop]) if (v !== null && v > 0) { lows.push(v); highs.push(v); }
+  const min = Math.min(...lows);
+  const max = Math.max(...highs);
+  const span = max - min || 1;
+  const y = (p: number) => PAD + (1 - (p - min) / span) * (H - PAD * 2);
+  const cw = W / data.length;
+  const maxV = Math.max(...data.map(c => c.v), 1);
+  const line = (v: number | null, color: string, dash?: string) => v !== null && v > 0 && v >= min && v <= max ? (
+    <line x1={0} y1={y(v)} x2={W} y2={y(v)} stroke={color} strokeWidth={1.2} strokeDasharray={dash} />
+  ) : null;
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full bg-zinc-950 rounded-lg border border-zinc-800" style={{ height: 240 }}>
+      {data.map((c, i) => {
+        const up = c.c >= c.o;
+        const col = up ? "#22c55e" : "#ef4444";
+        const x = i * cw + cw / 2;
+        const vh = (c.v / maxV) * H * 0.16;
+        return (
+          <g key={c.t}>
+            <rect x={i * cw + 1} y={H - vh} width={Math.max(cw - 2, 1)} height={vh} fill={col} opacity={0.25} />
+            <line x1={x} y1={y(c.h)} x2={x} y2={y(c.l)} stroke={col} strokeWidth={1} />
+            <rect
+              x={i * cw + cw * 0.2}
+              y={y(Math.max(c.o, c.c))}
+              width={Math.max(cw * 0.6, 1)}
+              height={Math.max(Math.abs(y(c.o) - y(c.c)), 1)}
+              fill={col}
+            />
+          </g>
+        );
+      })}
+      {line(entry, "#facc15")}
+      {line(target, "#34d399", "5 3")}
+      {line(stop, "#f87171", "5 3")}
+    </svg>
+  );
+}
+
+function Donut({ wins, losses, size = 92 }: { wins: number; losses: number; size?: number }) {
+  const total = wins + losses;
+  const pct = total > 0 ? wins / total : 0;
+  const r = (size - 12) / 2;
+  const circ = 2 * Math.PI * r;
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#27272a" strokeWidth={10} />
+      <circle
+        cx={size / 2} cy={size / 2} r={r} fill="none" stroke={pct >= 0.5 ? "#34d399" : "#f87171"} strokeWidth={10}
+        strokeDasharray={`${circ * pct} ${circ}`} strokeLinecap="round" transform={`rotate(-90 ${size / 2} ${size / 2})`}
+      />
+      <text x="50%" y="50%" dominantBaseline="middle" textAnchor="middle" fontSize={size / 4.5} fontWeight="bold" fill="#e4e4e7">
+        {total > 0 ? `${Math.round(pct * 100)}%` : "-"}
+      </text>
+    </svg>
+  );
+}
+
+function SignalModal({ signal: s, signals, traders, t, lang, onClose }: {
   signal: SquareSignal;
+  signals: SquareSignal[];
+  traders: SquareTrader[];
   t: (key: string) => string;
   lang: string;
   onClose: () => void;
@@ -775,52 +909,259 @@ function SignalModal({ signal: s, t, lang, onClose }: {
       progress = Math.max(-0.25, Math.min(1.25, (basis - s.curPrice) / (basis - s.target)));
     }
   }
+
+  const [tf, setTf] = useState("15m");
+  const [candles, setCandles] = useState<Candle[]>([]);
+  const [seenAt, setSeenAt] = useState<number | null>(null);
+  useEffect(() => {
+    const t = setTimeout(() => setSeenAt(Date.now()), 0);
+    return () => clearTimeout(t);
+  }, []);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/candles?symbol=${encodeURIComponent(s.symbol)}&interval=${tf}`);
+        if (!res.ok || cancelled) return;
+        const data = await res.json();
+        if (!cancelled && Array.isArray(data.candles)) setCandles(data.candles);
+      } catch {}
+    })();
+    return () => { cancelled = true; };
+  }, [s.symbol, tf]);
+
+  const trader = traders.find(x => x.source === (s.source ?? "square") && x.author === s.author) ?? null;
+  const peers = signals
+    .filter(x => x.asset === s.asset && x.id !== s.id)
+    .sort((a, b) => b.postMs - a.postMs)
+    .slice(0, 8);
+  const mine = signals
+    .filter(x => x.source === (s.source ?? "square") && x.author === s.author)
+    .sort((a, b) => b.postMs - a.postMs)
+    .slice(0, 12);
+  const mineClosed = mine.filter(x => x.status === "CLOSED_WIN" || x.status === "CLOSED_LOSS");
+  const mineWins = mineClosed.filter(x => x.status === "CLOSED_WIN").length;
+  const onAsset = mine.filter(x => x.asset === s.asset);
+  const onAssetClosed = onAsset.filter(x => x.status === "CLOSED_WIN" || x.status === "CLOSED_LOSS");
+  const onAssetWins = onAssetClosed.filter(x => x.status === "CLOSED_WIN").length;
+  const onAssetRois = onAsset.map(x => x.roiPct).filter((v): v is number => typeof v === "number" && Number.isFinite(v));
+  const onAssetAvg = onAssetRois.length > 0 ? onAssetRois.reduce((a, b) => a + b, 0) / onAssetRois.length : 0;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-start justify-center p-4 bg-black/70 overflow-y-auto" onClick={onClose}>
       <div
-        className="w-full max-w-lg rounded-xl border border-zinc-700 bg-zinc-950 p-5 space-y-3"
+        className="w-full max-w-6xl rounded-xl border border-zinc-700 bg-zinc-950 p-4 md:p-5 my-6"
         onClick={e => e.stopPropagation()}
       >
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap mb-4">
           <span className="font-bold text-lg">${s.asset}</span>
-          <span className={`text-xs px-2 py-0.5 rounded font-bold ${s.side === "LONG" ? "bg-emerald-500/15 text-emerald-300" : "bg-red-500/15 text-red-300"}`}>{s.side}</span>
+          <span className={`text-xs px-2 py-0.5 rounded font-bold ${s.side === "LONG" ? "bg-emerald-500/15 text-emerald-300" : "bg-red-500/15 text-red-300"}`}>
+            {s.side === "LONG" ? t("square.buy") : t("square.sell")} · {s.side}
+          </span>
           <span className="text-[11px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">{SRC_LABEL[s.source ?? "square"] ?? "SQ"} · {s.market}</span>
           <span className={`ml-auto text-xl font-bold ${s.roiPct === null ? "text-zinc-500" : s.roiPct >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-            {s.roiPct === null ? "-" : `${s.roiPct >= 0 ? "+" : ""}${s.roiPct.toFixed(1)}%`}
+            {s.roiPct === null ? "-" : `${s.roiPct >= 0 ? "+" : ""}${s.roiPct.toFixed(2)}%`}
           </span>
           <button onClick={onClose} className="text-zinc-500 hover:text-zinc-200 text-lg leading-none">✕</button>
         </div>
-        {progress !== null && (
-          <div>
-            <div className="flex justify-between text-[10px] text-zinc-500 mb-1">
-              <span>{t("square.entry")}: {fmtPrice(basis)}</span>
-              <span>TP: {fmtPrice(s.target)}</span>
+
+        <div className="grid gap-4 lg:grid-cols-[240px_1fr_240px]">
+          {/* Left: outcome + levels + progress */}
+          <div className="space-y-3">
+            <div className="rounded-lg border border-zinc-800 p-3">
+              <p className="text-[11px] text-zinc-500 mb-1">{t("square.current")} ROI</p>
+              <p className={`text-lg font-bold ${s.roiPct === null ? "text-zinc-500" : s.roiPct >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                {s.roiPct === null ? "-" : `${s.roiPct >= 0 ? "+" : ""}${s.roiPct.toFixed(2)}%`}
+              </p>
+              <span className={`inline-block mt-1 text-[11px] px-2 py-0.5 rounded font-bold ${
+                s.status === "CLOSED_WIN" ? "bg-emerald-500/15 text-emerald-300" :
+                s.status === "CLOSED_LOSS" ? "bg-red-500/15 text-red-300" :
+                s.status === "LIVE" ? "bg-emerald-500/15 text-emerald-300" : "bg-amber-500/15 text-amber-300"
+              }`}>
+                {s.status === "LIVE" ? "● LIVE" : s.status === "OPEN" ? t("square.status.open") : t("square.status.closed")}{s.closeReason ? ` · ${s.closeReason}` : ""}
+              </span>
             </div>
-            <div className="h-2 rounded bg-zinc-800 overflow-hidden relative">
-              <div className={`h-full ${progress >= 1 ? "bg-emerald-500" : progress >= 0 ? "bg-sky-500" : "bg-red-500"}`} style={{ width: `${Math.max(0, Math.min(100, progress * 100))}%` }} />
+            <div className="rounded-lg border border-zinc-800 p-3 text-xs space-y-1.5">
+              <p className="text-[11px] text-zinc-500 font-semibold">{t("square.levels")}</p>
+              {[
+                [t("square.entry"), s.entry !== null ? fmtPrice(s.entry) : `@${fmtPrice(s.postPrice)}`],
+                ["TP", fmtPrice(s.target)],
+                ["SL", fmtPrice(s.stop)],
+              ].map(([label, value]) => (
+                <div key={label} className="flex justify-between">
+                  <span className="text-zinc-500">{label}</span>
+                  <b className="font-mono text-zinc-200">{value}</b>
+                </div>
+              ))}
             </div>
-            <p className="text-[10px] text-zinc-500 mt-1">{t("square.progress")}: {(progress * 100).toFixed(0)}%{s.stop !== null && <span className="ml-2">SL: {fmtPrice(s.stop)}</span>}</p>
+            <div className="rounded-lg border border-zinc-800 p-3 text-xs space-y-1.5">
+              <p className="text-[11px] text-zinc-500 font-semibold">{t("square.outcome")}</p>
+              {[
+                [t("square.direction"), s.side],
+                [t("square.statusTitle"), s.status],
+                [t("square.result"), s.status === "CLOSED_WIN" ? "WIN" : s.status === "CLOSED_LOSS" ? "LOSS" : "-"],
+              ].map(([label, value]) => (
+                <div key={label} className="flex justify-between">
+                  <span className="text-zinc-500">{label}</span>
+                  <b className="text-zinc-200">{value}</b>
+                </div>
+              ))}
+            </div>
+            {progress !== null && (
+              <div className="rounded-lg border border-zinc-800 p-3">
+                <p className="text-[11px] text-zinc-500 font-semibold mb-1.5">{t("square.progress")}</p>
+                <div className="h-2 rounded bg-zinc-800 overflow-hidden">
+                  <div className={`h-full ${progress >= 1 ? "bg-emerald-500" : progress >= 0 ? "bg-sky-500" : "bg-red-500"}`} style={{ width: `${Math.max(0, Math.min(100, progress * 100))}%` }} />
+                </div>
+                <div className="flex justify-between text-[10px] text-zinc-500 mt-1">
+                  <span>{t("square.entry")}</span>
+                  <span>{(progress * 100).toFixed(0)}%</span>
+                  <span>TP</span>
+                </div>
+              </div>
+            )}
           </div>
-        )}
-        <div className="grid grid-cols-2 gap-1.5 text-xs">
-          <div className="bg-zinc-900 rounded p-2">{t("square.entry")} <b className="float-right font-mono">{s.entry !== null ? fmtPrice(s.entry) : `@${fmtPrice(s.postPrice)}`}</b></div>
-          <div className="bg-zinc-900 rounded p-2">{t("square.current")}: <b className="float-right font-mono">{fmtPrice(s.curPrice)}</b></div>
-          <div className="bg-zinc-900 rounded p-2">TP <b className="float-right font-mono">{fmtPrice(s.target)}</b></div>
-          <div className="bg-zinc-900 rounded p-2">SL <b className="float-right font-mono">{fmtPrice(s.stop)}</b></div>
-        </div>
-        <p className="text-xs text-zinc-400 leading-relaxed">{s.snippet}</p>
-        <div className="flex items-center gap-2 text-[11px] text-zinc-500 flex-wrap">
-          <span>{s.author} · {fmtAge(s.postMs, lang)}</span>
-          <span className={`px-1.5 py-0.5 rounded ${
-            s.status === "CLOSED_WIN" ? "bg-emerald-500/15 text-emerald-300" :
-            s.status === "CLOSED_LOSS" ? "bg-red-500/15 text-red-300" :
-            s.status === "LIVE" ? "bg-sky-500/15 text-sky-300" : "bg-zinc-800 text-zinc-400"
-          }`}>
-            {t(`square.status.${s.status === "CLOSED_WIN" || s.status === "CLOSED_LOSS" ? "closed" : s.status.toLowerCase()}`)}{s.closeReason ? ` · ${s.closeReason}` : ""}
-          </span>
-          <a href={s.url} target="_blank" rel="noreferrer" className="ml-auto px-3 py-1 rounded-lg bg-emerald-600 text-white font-medium hover:bg-emerald-500">
-            {t("square.original")} →
-          </a>
+
+          {/* Center: chart + other calls + timeline + original */}
+          <div className="space-y-4 min-w-0">
+            <div>
+              <div className="flex items-center gap-1.5 mb-2">
+                {(["15m", "1h", "4h", "1d"] as const).map(iv => (
+                  <button key={iv} onClick={() => setTf(iv)} className={`px-2 py-0.5 rounded text-[11px] ${tf === iv ? "bg-amber-500/20 text-amber-300 font-bold" : "bg-zinc-800 text-zinc-500"}`}>{iv}</button>
+                ))}
+                <span className="ml-auto text-[10px] text-zinc-600">
+                  <span className="text-yellow-400">— {t("square.entry")}</span>
+                  <span className="ml-2 text-emerald-400">┄ TP</span>
+                  <span className="ml-2 text-red-400">┄ SL</span>
+                </span>
+              </div>
+              <CandleChart candles={candles} entry={s.entry ?? s.postPrice} target={s.target} stop={s.stop} />
+            </div>
+
+            <div>
+              <p className="text-xs font-semibold mb-1.5">
+                {t("square.otherCalls")} ${s.asset}
+                <span className="ml-2 font-normal text-zinc-500">{peers.length}{t("square.tradersUnit")}</span>
+              </p>
+              {peers.length === 0 ? (
+                <p className="text-[11px] text-zinc-600">{t("common.noData")}</p>
+              ) : (
+                <div className="rounded-lg border border-zinc-800 overflow-hidden">
+                  <table className="w-full text-[11px]">
+                    <thead>
+                      <tr className="bg-zinc-900 text-zinc-500 text-left">
+                        <th className="px-2 py-1.5">{t("square.trader")}</th>
+                        <th className="px-2 py-1.5">{t("square.direction")}</th>
+                        <th className="px-2 py-1.5 text-right">{t("square.entry")}</th>
+                        <th className="px-2 py-1.5">{t("square.statusTitle")}</th>
+                        <th className="px-2 py-1.5 text-right">ROI</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {peers.map(p => (
+                        <tr key={p.id} className="border-t border-zinc-800/70">
+                          <td className="px-2 py-1.5 text-zinc-300">{p.author}</td>
+                          <td className="px-2 py-1.5">
+                            <span className={`px-1.5 py-px rounded font-bold ${p.side === "LONG" ? "bg-emerald-500/15 text-emerald-300" : "bg-red-500/15 text-red-300"}`}>
+                              {p.side === "LONG" ? t("square.buy") : t("square.sell")}
+                            </span>
+                          </td>
+                          <td className="px-2 py-1.5 text-right font-mono text-zinc-300">{p.entry !== null ? fmtPrice(p.entry) : "-"}</td>
+                          <td className="px-2 py-1.5">
+                            <span className={p.status === "CLOSED_WIN" ? "text-emerald-400" : p.status === "CLOSED_LOSS" ? "text-red-400" : p.status === "LIVE" ? "text-emerald-300" : "text-amber-300"}>
+                              {p.status === "LIVE" ? "● LIVE" : p.status === "OPEN" ? t("square.status.open") : t("square.status.closed")}
+                            </span>
+                          </td>
+                          <td className={`px-2 py-1.5 text-right font-mono font-bold ${p.roiPct === null ? "text-zinc-600" : p.roiPct >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                            {p.roiPct === null ? "-" : `${p.roiPct >= 0 ? "+" : ""}${p.roiPct.toFixed(1)}%`}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            <div>
+              <p className="text-xs font-semibold mb-1.5">{t("square.timeline")}</p>
+              <div className="rounded-lg border border-zinc-800 p-3 space-y-2 text-[11px]">
+                {[
+                  { label: t("square.posted"), time: s.postMs, dot: "bg-sky-500" },
+                  { label: t("square.lastUpdated"), time: seenAt ?? s.postMs, dot: "bg-zinc-500", ago: true },
+                ].map((row, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <span className={`w-1.5 h-1.5 rounded-full ${row.dot}`} />
+                    <span className="text-zinc-400">{row.label}</span>
+                    <span className="ml-auto font-mono text-zinc-300">
+                      {new Date(row.time).toLocaleString(lang === "ko" ? "ko-KR" : "en-US", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <div className="flex items-center mb-1.5">
+                <p className="text-xs font-semibold">{t("square.originalPost")}</p>
+                <a href={s.url} target="_blank" rel="noreferrer" className="ml-auto text-[11px] text-amber-300 hover:underline">
+                  {t("square.original")} →
+                </a>
+              </div>
+              <p className="text-[11px] text-zinc-400 leading-relaxed rounded-lg border border-zinc-800 bg-zinc-900/50 p-3 whitespace-pre-wrap">{s.snippet}</p>
+            </div>
+          </div>
+
+          {/* Right: trader card */}
+          <div className="space-y-3">
+            <div className="rounded-lg border border-zinc-800 p-3">
+              <p className="text-[11px] text-zinc-500 font-semibold mb-2">{t("square.trader")}</p>
+              <p className="text-sm font-bold">{s.author}{s.authorVerified && <span className="ml-1 text-sky-400">✓</span>}</p>
+              {trader && (
+                <div className="flex items-center gap-2 mt-2 text-[11px]">
+                  <span className={`px-1.5 py-px rounded font-bold ${trader.style === "Scalper" ? "bg-amber-500/15 text-amber-300" : trader.style === "Swing" ? "bg-violet-500/15 text-violet-300" : "bg-zinc-800 text-zinc-500"}`}>
+                    {trader.style}
+                  </span>
+                  <span className="px-1.5 py-px rounded bg-zinc-800 text-zinc-400 font-bold">{trader.market}</span>
+                  <span className="ml-auto text-zinc-500">{t("square.callsCount")}: <b className="text-zinc-200">{trader.calls}</b></span>
+                </div>
+              )}
+              <div className="grid grid-cols-2 gap-1.5 mt-2 text-[11px]">
+                <div className="bg-zinc-900 rounded p-1.5">{t("square.closedCount")} <b className="float-right">{trader ? trader.wins + trader.losses : "-"}</b></div>
+                <div className="bg-zinc-900 rounded p-1.5">{t("square.activeNow")} <b className="float-right">{mine.filter(x => x.status === "LIVE" || x.status === "OPEN").length}</b></div>
+              </div>
+            </div>
+            <div className="rounded-lg border border-zinc-800 p-3">
+              <p className="text-[11px] text-zinc-500 font-semibold mb-1.5">{t("square.last12")}</p>
+              <div className="flex gap-1">
+                {mine.length === 0 && <span className="text-[11px] text-zinc-600">-</span>}
+                {mine.map(x => (
+                  <span
+                    key={x.id}
+                    title={`${x.asset} ${x.roiPct !== null ? `${x.roiPct >= 0 ? "+" : ""}${x.roiPct.toFixed(1)}%` : x.status}`}
+                    className={`w-4 h-6 rounded-sm ${x.status === "CLOSED_WIN" ? "bg-emerald-500" : x.status === "CLOSED_LOSS" ? "bg-red-500" : "bg-zinc-700"}`}
+                  />
+                ))}
+              </div>
+              <p className="text-[10px] text-zinc-600 mt-1">
+                {mineWins}W / {mineClosed.length - mineWins}L · {mineClosed.length > 0 ? Math.round((mineWins / mineClosed.length) * 100) : 0}% {t("square.winRate")}
+              </p>
+            </div>
+            <div className="rounded-lg border border-zinc-800 p-3 text-center">
+              <p className="text-[11px] text-zinc-500 font-semibold mb-1">{t("square.recordOn")} ${s.asset}</p>
+              <div className="flex justify-center"><Donut wins={onAssetWins} losses={onAssetClosed.length - onAssetWins} /></div>
+              <div className="grid grid-cols-2 gap-1 mt-2 text-[11px]">
+                <div className="bg-zinc-900 rounded p-1.5">{t("square.wins")} <b className="float-right text-emerald-400">{onAssetWins}</b></div>
+                <div className="bg-zinc-900 rounded p-1.5">{t("square.losses")} <b className="float-right text-red-400">{onAssetClosed.length - onAssetWins}</b></div>
+              </div>
+              <p className="text-[11px] text-zinc-400 mt-1.5">{t("square.avgRoi")}: <b className={onAssetAvg >= 0 ? "text-emerald-400" : "text-red-400"}>{onAssetAvg >= 0 ? "+" : ""}{onAssetAvg.toFixed(2)}%</b></p>
+            </div>
+            <div className="rounded-lg border border-zinc-800 p-3 text-[11px] space-y-1">
+              <p className="text-zinc-500 font-semibold">{t("square.howVerified")}</p>
+              <div className="flex justify-between"><span className="text-zinc-500">{t("square.confTitle")}</span><b>{t(`square.conf.${s.confidence}`)}</b></div>
+              <div className="flex justify-between"><span className="text-zinc-500">{t("square.replayed")}</span><b>{s.postPrice !== null ? t("square.yes") : t("square.no")}</b></div>
+              <div className="flex justify-between"><span className="text-zinc-500">{t("square.sourceTitle")}</span><b>{SRC_LABEL[s.source ?? "square"]}</b></div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
