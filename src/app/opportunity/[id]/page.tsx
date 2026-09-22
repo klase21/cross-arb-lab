@@ -1,9 +1,16 @@
 "use client";
 
-import { useState, useEffect, use, useCallback } from "react";
+import { useState, useEffect, use, useCallback, useMemo } from "react";
 import { scoreDexArb, riskColor, riskBarColor } from "@/lib/risk-scorer";
 import { LangProvider, useLang } from "@/lib/i18n";
 import { useDisplayCurrency } from "@/lib/use-currency";
+import {
+  DEFAULT_GAS_ESTIMATE_USD,
+  DEX_SWAP_FEES,
+  GAS_COSTS_USD,
+  SINGLE_BRIDGE_FEE_PCT,
+  UPBIT_TRADING_FEE_PCT,
+} from "@/lib/calculator-config";
 
 interface FlowStep { order: number; action: string; detail: string; platform: string; chain?: string; icon: string; }
 interface CostBreakdown { upbitFeeKrw: number; withdrawalFeeKrw: number; gasCostKrw: number; onchainFeeKrw: number; totalCostsKrw: number; tokensReceived: number; netProfitKrw: number; roiPct: number; breakEvenSpreadPct: number; }
@@ -26,6 +33,7 @@ function OpportunityDetailInner({ params }: { params: Promise<{ id: string }> })
   const [liveBinanceUsd, setLiveBinanceUsd] = useState<number | null>(null);
   const [liveFx, setLiveFx] = useState<number | null>(null);
   const [liveFetchedAt, setLiveFetchedAt] = useState<string | null>(null);
+  const fxNow = liveFx ?? 1350;
 
   const refreshLivePrices = useCallback(async () => {
     const coin = pair.split("/")[0].replace("W", "");
@@ -35,7 +43,7 @@ function OpportunityDetailInner({ params }: { params: Promise<{ id: string }> })
       const [usdtOrderbook, coinOrderbook, binanceBook, fxRes] = await Promise.all([
         fetch(`https://api.upbit.com/v1/orderbook?markets=KRW-USDT`).then(r => r.ok ? r.json() : null).catch(() => null),
         fetch(`https://api.upbit.com/v1/orderbook?markets=KRW-${upbitCoin}`).then(r => r.ok ? r.json() : null).catch(() => null),
-        fetch(`https://api.binance.com/api/v3/ticker/bookTicker?symbol=${coin}USDT`).then(r => r.ok ? r.json() : null).catch(() => null),
+        fetch(`https://data-api.binance.vision/api/v3/ticker/bookTicker?symbol=${coin}USDT`).then(r => r.ok ? r.json() : null).catch(() => null),
         fetch(`https://open.er-api.com/v6/latest/USD`).then(r => r.ok ? r.json() : null).catch(() => null),
       ]);
       if (usdtOrderbook?.[0]?.orderbook_units?.[0]?.ask_price) setLiveUsdtKrw(usdtOrderbook[0].orderbook_units[0].ask_price);
@@ -109,6 +117,38 @@ function OpportunityDetailInner({ params }: { params: Promise<{ id: string }> })
     refreshLivePrices();
   }, [pair, buyChain, sellChain, refreshLivePrices]);
 
+  // Live-estimate fallback when the scan no longer carries this opportunity
+  // (no costBreakdown): same 1M KRW round-trip math on live quotes.
+  const liveCost: CostBreakdown | null = useMemo(() => {
+    if (!opp || opp.costBreakdown) return null;
+    if (!liveUpbitKrw || !liveBinanceUsd || !liveFx) return null;
+    const investmentKrw = 1000000;
+    const upbitFeeKrw = investmentKrw * (UPBIT_TRADING_FEE_PCT / 100);
+    const tokensReceived = (investmentKrw - upbitFeeKrw) / liveUpbitKrw;
+    const withdrawalFeeKrw = investmentKrw * 0.001; // ~0.1% flat estimate
+    const gasCostKrw = (GAS_COSTS_USD[opp.sellChain] ?? DEFAULT_GAS_ESTIMATE_USD) * liveFx;
+    const swapPct = DEX_SWAP_FEES[opp.sellChain] ?? 0.3;
+    const cross = opp.buyChain !== opp.sellChain;
+    const onchainFeeKrw = investmentKrw * (((cross ? swapPct * 2 : swapPct) + (cross ? SINGLE_BRIDGE_FEE_PCT : 0)) / 100);
+    const totalCostsKrw = upbitFeeKrw + withdrawalFeeKrw + gasCostKrw + onchainFeeKrw;
+    const liveSpreadPct = ((liveUpbitKrw / liveFx - liveBinanceUsd) / liveBinanceUsd) * 100;
+    const netProfitKrw = investmentKrw * (liveSpreadPct / 100) - totalCostsKrw;
+    return {
+      upbitFeeKrw,
+      withdrawalFeeKrw,
+      gasCostKrw,
+      onchainFeeKrw,
+      totalCostsKrw,
+      tokensReceived,
+      netProfitKrw,
+      roiPct: (netProfitKrw / investmentKrw) * 100,
+      breakEvenSpreadPct: (totalCostsKrw / investmentKrw) * 100,
+    };
+  }, [opp, liveUpbitKrw, liveBinanceUsd, liveFx]);
+
+  const cb = opp?.costBreakdown ?? liveCost;
+  const isLiveEstimate = !!opp && !opp.costBreakdown && !!liveCost;
+
   const fmtUsd = (n: number) => "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const fmtPrice = (n: number) => n >= 1000 ? n.toLocaleString("en-US", { maximumFractionDigits: 2 }) : n.toFixed(6);
 
@@ -141,15 +181,15 @@ function OpportunityDetailInner({ params }: { params: Promise<{ id: string }> })
             <SummaryCard
               label={lang === "ko" ? "예상 수익" : "Est. Profit"}
               value={
-                opp.costBreakdown
+                cb
                   ? displayCurrency === "USD"
-                    ? `$${(opp.costBreakdown.netProfitKrw / 1350).toFixed(2)}`
-                    : `${Math.round(opp.costBreakdown.netProfitKrw).toLocaleString()} KRW`
+                    ? `$${(cb.netProfitKrw / fxNow).toFixed(2)}`
+                    : `${Math.round(cb.netProfitKrw).toLocaleString()} KRW`
                   : displayCurrency === "USD"
                     ? fmtUsd(opp.estimatedProfitUsd)
-                    : `${Math.round(opp.estimatedProfitUsd * 1350).toLocaleString()} KRW`
+                    : `${Math.round(opp.estimatedProfitUsd * fxNow).toLocaleString()} KRW`
               }
-              accent={opp.costBreakdown ? opp.costBreakdown.netProfitKrw > 0 : true}
+              accent={cb ? cb.netProfitKrw > 0 : true}
             />
             <SummaryCard label={lang === "ko" ? "매수 가격" : "Buy Price"} value={"@ " + fmtPrice(opp.buyPrice)} />
             <SummaryCard label={lang === "ko" ? "매도 가격" : "Sell Price"} value={"@ " + fmtPrice(opp.sellPrice)} />
@@ -164,7 +204,7 @@ function OpportunityDetailInner({ params }: { params: Promise<{ id: string }> })
               isCrossChain: opp.isCrossChain,
               liquidityUsd: opp.liquidityUsd,
               netSpreadPct: opp.netSpreadPct,
-              breakEvenSpreadPct: opp.costBreakdown?.breakEvenSpreadPct,
+              breakEvenSpreadPct: cb?.breakEvenSpreadPct,
             });
             const gradeLabel = t(`risk.grade.${risk.grade}`);
             return (
@@ -207,32 +247,36 @@ function OpportunityDetailInner({ params }: { params: Promise<{ id: string }> })
                 ? "KRW로 시작해 업비트에서 매수 → 출금 → DEX 스왑 → 재입금 → KRW로 매도까지의 전 과정을 금액으로 추적합니다."
                 : "Tracks the full loop from KRW on Upbit → buy → withdraw → DEX swaps → redeposit → sell back to KRW."}
             </p>
-            {opp.costBreakdown ? (
+            {cb ? (
               <div className="space-y-3">
-                <div className="grid grid-cols-3 gap-3 text-xs">
+                {isLiveEstimate && (
+                  <p className="text-[11px] text-amber-300/90 rounded-lg border border-amber-800/50 bg-amber-950/20 px-3 py-1.5">
+                    {lang === "ko" ? "⚡ 실시간 추정 — 스캔에 없어 현재 호가로 계산됨 (출금수수료 0.1% 가정)" : "⚡ Live estimate — not in scan, computed from current quotes (0.1% withdrawal fee assumed)"}
+                  </p>
+                )}                <div className="grid grid-cols-3 gap-3 text-xs">
                   <div className="rounded-lg bg-zinc-900 p-3 text-center">
                     <p className="text-zinc-500 mb-1">{lang === "ko" ? "시작 자금" : "Initial"}</p>
                     <p className="font-bold">
                       {displayCurrency === "USD"
-                        ? `$${(1000000 / 1350).toFixed(2)}`
+                        ? `$${(1000000 / fxNow).toFixed(2)}`
                         : `1,000,000 KRW`}
                     </p>
-                    <p className="text-[10px] text-zinc-600">{displayCurrency === "USD" ? "1,000,000 KRW" : `$${(1000000 / 1350).toFixed(2)}`}</p>
+                    <p className="text-[10px] text-zinc-600">{displayCurrency === "USD" ? "1,000,000 KRW" : `$${(1000000 / fxNow).toFixed(2)}`}</p>
                   </div>
                   <div className="rounded-lg bg-zinc-900 p-3 text-center">
                     <p className="text-zinc-500 mb-1">{lang === "ko" ? "매수 후 보유" : "After Buy"}</p>
-                    <p className="font-bold">{opp.costBreakdown.tokensReceived.toFixed(6)} {opp.buyCoin}</p>
-                    <p className="text-[10px] text-zinc-600">≈ {(1000000 - opp.costBreakdown.upbitFeeKrw).toLocaleString()} KRW</p>
+                    <p className="font-bold">{cb.tokensReceived.toFixed(6)} {opp.buyCoin}</p>
+                    <p className="text-[10px] text-zinc-600">≈ {(1000000 - cb.upbitFeeKrw).toLocaleString()} KRW</p>
                   </div>
-                  <div className={`rounded-lg p-3 text-center border ${opp.costBreakdown.netProfitKrw >= 0 ? "bg-emerald-950/30 border-emerald-800" : "bg-red-950/30 border-red-800"}`}>
+                  <div className={`rounded-lg p-3 text-center border ${cb.netProfitKrw >= 0 ? "bg-emerald-950/30 border-emerald-800" : "bg-red-950/30 border-red-800"}`}>
                     <p className="text-zinc-500 mb-1">{lang === "ko" ? "최종 회수" : "Final"}</p>
-                    <p className={`font-bold ${opp.costBreakdown.netProfitKrw >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                    <p className={`font-bold ${cb.netProfitKrw >= 0 ? "text-emerald-400" : "text-red-400"}`}>
                       {displayCurrency === "USD"
-                        ? `$${((1000000 + opp.costBreakdown.netProfitKrw) / 1350).toFixed(2)}`
-                        : `${(1000000 + opp.costBreakdown.netProfitKrw).toLocaleString()} KRW`}
+                        ? `$${((1000000 + cb.netProfitKrw) / fxNow).toFixed(2)}`
+                        : `${(1000000 + cb.netProfitKrw).toLocaleString()} KRW`}
                     </p>
-                    <p className={`text-[10px] ${opp.costBreakdown.netProfitKrw >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                      {opp.costBreakdown.netProfitKrw >= 0 ? "+" : ""}{displayCurrency === "USD" ? `$${(Math.abs(opp.costBreakdown.netProfitKrw) / 1350).toFixed(2)}` : `${Math.round(opp.costBreakdown.netProfitKrw).toLocaleString()} KRW`} ({opp.costBreakdown.roiPct.toFixed(2)}%)
+                    <p className={`text-[10px] ${cb.netProfitKrw >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                      {cb.netProfitKrw >= 0 ? "+" : ""}{displayCurrency === "USD" ? `$${(Math.abs(cb.netProfitKrw) / fxNow).toFixed(2)}` : `${Math.round(cb.netProfitKrw).toLocaleString()} KRW`} ({cb.roiPct.toFixed(2)}%)
                     </p>
                   </div>
                 </div>
@@ -280,8 +324,8 @@ function OpportunityDetailInner({ params }: { params: Promise<{ id: string }> })
                           {Math.round(1000000 * ((liveUpbitKrw / liveFx - liveBinanceUsd) / liveBinanceUsd)).toLocaleString()} KRW
                           <span className="text-zinc-600 ml-1">
                             ({displayCurrency === "USD"
-                              ? `$${(Math.round(1000000 * ((liveUpbitKrw / liveFx - liveBinanceUsd) / liveBinanceUsd)) / (liveFx || 1350)).toFixed(2)}`
-                              : `$${((liveUpbitKrw / liveFx - liveBinanceUsd) / liveBinanceUsd * 1000).toFixed(2)}`})
+                              ? `$${(Math.round(1000000 * ((liveUpbitKrw / liveFx - liveBinanceUsd) / liveBinanceUsd)) / fxNow).toFixed(2)}`
+                              : `${Math.round(1000000 * ((liveUpbitKrw / liveFx - liveBinanceUsd) / liveBinanceUsd)).toLocaleString()} KRW`})
                           </span>
                         </span>
                       </div>
@@ -296,11 +340,11 @@ function OpportunityDetailInner({ params }: { params: Promise<{ id: string }> })
                 <div className="rounded-lg bg-zinc-900/50 border border-zinc-800 p-4">
                   <p className="text-xs font-medium text-zinc-400 mb-2">{lang === "ko" ? "단계별 비용 (1,000,000 KRW 투자 시)" : "Step costs (on 1,000,000 KRW)"}</p>
                   <div className="space-y-1.5 text-sm">
-                    <div className="flex justify-between"><span className="text-zinc-400">1. {lang === "ko" ? "업비트 매수 수수료 (0.05%)" : "Upbit buy fee (0.05%)"}</span><span className="font-mono text-red-400">-{displayCurrency === "USD" ? `$${(opp.costBreakdown.upbitFeeKrw / 1350).toFixed(2)}` : `${Math.round(opp.costBreakdown.upbitFeeKrw).toLocaleString()} KRW`}</span></div>
-                    <div className="flex justify-between"><span className="text-zinc-400">2. {lang === "ko" ? "출금 수수료" : "Withdrawal fee"} ({opp.buyChain})</span><span className="font-mono text-red-400">-{displayCurrency === "USD" ? `$${(opp.costBreakdown.withdrawalFeeKrw / 1350).toFixed(2)}` : `${Math.round(opp.costBreakdown.withdrawalFeeKrw).toLocaleString()} KRW`}</span></div>
-                    <div className="flex justify-between"><span className="text-zinc-400">3-4. {lang === "ko" ? "가스 + DEX/브릿지" : "Gas + DEX/Bridge"}</span><span className="font-mono text-red-400">-{displayCurrency === "USD" ? `$${((opp.costBreakdown.gasCostKrw + opp.costBreakdown.onchainFeeKrw) / 1350).toFixed(2)}` : `${Math.round(opp.costBreakdown.gasCostKrw + opp.costBreakdown.onchainFeeKrw).toLocaleString()} KRW`}</span></div>
-                    <div className="flex justify-between border-t border-zinc-700 pt-2 mt-2 font-bold"><span className="text-zinc-300">{lang === "ko" ? "총 비용" : "Total costs"}</span><span className="text-red-400">-{displayCurrency === "USD" ? `$${(opp.costBreakdown.totalCostsKrw / 1350).toFixed(2)}` : `${Math.round(opp.costBreakdown.totalCostsKrw).toLocaleString()} KRW`}</span></div>
-                    <div className="flex justify-between"><span className="text-zinc-400">{lang === "ko" ? "필요 스프레드 (손익분기)" : "Break-even spread"}</span><span className="font-mono text-amber-400">{opp.costBreakdown.breakEvenSpreadPct.toFixed(3)}%</span></div>
+                    <div className="flex justify-between"><span className="text-zinc-400">1. {lang === "ko" ? "업비트 매수 수수료 (0.05%)" : "Upbit buy fee (0.05%)"}</span><span className="font-mono text-red-400">-{displayCurrency === "USD" ? `$${(cb.upbitFeeKrw / fxNow).toFixed(2)}` : `${Math.round(cb.upbitFeeKrw).toLocaleString()} KRW`}</span></div>
+                    <div className="flex justify-between"><span className="text-zinc-400">2. {lang === "ko" ? "출금 수수료" : "Withdrawal fee"} ({opp.buyChain})</span><span className="font-mono text-red-400">-{displayCurrency === "USD" ? `$${(cb.withdrawalFeeKrw / fxNow).toFixed(2)}` : `${Math.round(cb.withdrawalFeeKrw).toLocaleString()} KRW`}</span></div>
+                    <div className="flex justify-between"><span className="text-zinc-400">3-4. {lang === "ko" ? "가스 + DEX/브릿지" : "Gas + DEX/Bridge"}</span><span className="font-mono text-red-400">-{displayCurrency === "USD" ? `$${((cb.gasCostKrw + cb.onchainFeeKrw) / fxNow).toFixed(2)}` : `${Math.round(cb.gasCostKrw + cb.onchainFeeKrw).toLocaleString()} KRW`}</span></div>
+                    <div className="flex justify-between border-t border-zinc-700 pt-2 mt-2 font-bold"><span className="text-zinc-300">{lang === "ko" ? "총 비용" : "Total costs"}</span><span className="text-red-400">-{displayCurrency === "USD" ? `$${(cb.totalCostsKrw / fxNow).toFixed(2)}` : `${Math.round(cb.totalCostsKrw).toLocaleString()} KRW`}</span></div>
+                    <div className="flex justify-between"><span className="text-zinc-400">{lang === "ko" ? "필요 스프레드 (손익분기)" : "Break-even spread"}</span><span className="font-mono text-amber-400">{cb.breakEvenSpreadPct.toFixed(3)}%</span></div>
                     <div className="flex justify-between"><span className="text-zinc-400">{lang === "ko" ? "현재 스프레드" : "Current spread"}</span><span className="font-mono text-zinc-200">+{opp.netSpreadPct.toFixed(3)}%</span></div>
                   </div>
                 </div>
@@ -347,7 +391,7 @@ function OpportunityDetailInner({ params }: { params: Promise<{ id: string }> })
             </div>
           </div>
 
-          {opp.costBreakdown && (
+          {cb && (
             <div className="rounded-xl border border-zinc-800 p-6">
               <h2 className="text-base font-semibold mb-4">{lang === "ko" ? "비용 상세" : "Cost Breakdown"}</h2>
               <p className="text-xs text-zinc-600 mb-3">
@@ -358,32 +402,32 @@ function OpportunityDetailInner({ params }: { params: Promise<{ id: string }> })
               <div className="space-y-2">
                 <DetailRow
                   label={lang === "ko" ? "업비트 거래 수수료 (0.05%)" : "Upbit Trading Fee (0.05%)"}
-                  value={"-" + (displayCurrency === "USD" ? `$${(opp.costBreakdown.upbitFeeKrw / 1350).toFixed(2)}` : `${Math.round(opp.costBreakdown.upbitFeeKrw).toLocaleString()} KRW`)}
+                  value={"-" + (displayCurrency === "USD" ? `$${(cb.upbitFeeKrw / fxNow).toFixed(2)}` : `${Math.round(cb.upbitFeeKrw).toLocaleString()} KRW`)}
                 />
                 <DetailRow
                   label={lang === "ko" ? "출금 수수료" : "Withdrawal Fee"}
-                  value={"-" + (displayCurrency === "USD" ? `$${(opp.costBreakdown.withdrawalFeeKrw / 1350).toFixed(2)}` : `${Math.round(opp.costBreakdown.withdrawalFeeKrw).toLocaleString()} KRW`)}
+                  value={"-" + (displayCurrency === "USD" ? `$${(cb.withdrawalFeeKrw / fxNow).toFixed(2)}` : `${Math.round(cb.withdrawalFeeKrw).toLocaleString()} KRW`)}
                 />
                 <DetailRow
                   label={lang === "ko" ? "가스 비용" : "Gas Cost"}
-                  value={"-" + (displayCurrency === "USD" ? `$${(opp.costBreakdown.gasCostKrw / 1350).toFixed(2)}` : `${Math.round(opp.costBreakdown.gasCostKrw).toLocaleString()} KRW`)}
+                  value={"-" + (displayCurrency === "USD" ? `$${(cb.gasCostKrw / fxNow).toFixed(2)}` : `${Math.round(cb.gasCostKrw).toLocaleString()} KRW`)}
                 />
                 <DetailRow
                   label={lang === "ko" ? "DEX 스왑 + 브릿지 수수료" : "DEX Swap + Bridge Fees"}
-                  value={"-" + (displayCurrency === "USD" ? `$${(opp.costBreakdown.onchainFeeKrw / 1350).toFixed(2)}` : `${Math.round(opp.costBreakdown.onchainFeeKrw).toLocaleString()} KRW`)}
+                  value={"-" + (displayCurrency === "USD" ? `$${(cb.onchainFeeKrw / fxNow).toFixed(2)}` : `${Math.round(cb.onchainFeeKrw).toLocaleString()} KRW`)}
                 />
                 <div className="border-t border-zinc-700 pt-2 mt-2">
                   <DetailRow
                     label={lang === "ko" ? "총 비용" : "Total Costs"}
-                    value={"-" + (displayCurrency === "USD" ? `$${(opp.costBreakdown.totalCostsKrw / 1350).toFixed(2)}` : `${Math.round(opp.costBreakdown.totalCostsKrw).toLocaleString()} KRW`)}
+                    value={"-" + (displayCurrency === "USD" ? `$${(cb.totalCostsKrw / fxNow).toFixed(2)}` : `${Math.round(cb.totalCostsKrw).toLocaleString()} KRW`)}
                     bold
                   />
                 </div>
               </div>
               <div className="mt-4 grid grid-cols-3 gap-3">
-                <MiniStat label={lang === "ko" ? "매수 수량" : "Tokens Bought"} value={opp.costBreakdown.tokensReceived.toFixed(6)} sub={opp.buyCoin} />
-                <MiniStat label="ROI" value={opp.costBreakdown.roiPct.toFixed(3) + "%"} sub={lang === "ko" ? "순수익률" : "net return"} />
-                <MiniStat label={lang === "ko" ? "손익분기 스프레드" : "Break-even Spread"} value={opp.costBreakdown.breakEvenSpreadPct.toFixed(2) + "%"} sub={lang === "ko" ? "필요 최소" : "minimum needed"} />
+                <MiniStat label={lang === "ko" ? "매수 수량" : "Tokens Bought"} value={cb.tokensReceived.toFixed(6)} sub={opp.buyCoin} />
+                <MiniStat label="ROI" value={cb.roiPct.toFixed(3) + "%"} sub={lang === "ko" ? "순수익률" : "net return"} />
+                <MiniStat label={lang === "ko" ? "손익분기 스프레드" : "Break-even Spread"} value={cb.breakEvenSpreadPct.toFixed(2) + "%"} sub={lang === "ko" ? "필요 최소" : "minimum needed"} />
               </div>
             </div>
           )}
