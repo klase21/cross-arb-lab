@@ -38,14 +38,22 @@ async function ensureTable(sql) {
       collected_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )`;
   await sql`CREATE INDEX IF NOT EXISTS idx_tv_ideas_collected ON tv_ideas (collected_at DESC)`;
+  await sql`
+    CREATE TABLE IF NOT EXISTS st_ideas (
+      id BIGINT PRIMARY KEY,
+      author TEXT NOT NULL DEFAULT '',
+      title TEXT NOT NULL DEFAULT '',
+      text TEXT NOT NULL DEFAULT '',
+      symbol_hint TEXT,
+      bullish BOOLEAN,
+      likes INTEGER,
+      published_at TIMESTAMPTZ,
+      collected_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_st_ideas_collected ON st_ideas (collected_at DESC)`;
 }
 
-async function scrape() {
-  const browser = await chromium.launch({ headless: true });
-  const page = await browser.newPage({
-    userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-    viewport: { width: 1366, height: 900 },
-  });
+async function scrape(page) {
   await page.goto("https://www.tradingview.com/markets/cryptocurrencies/ideas/?sort=recent", {
     waitUntil: "domcontentloaded", timeout: 60000,
   });
@@ -94,15 +102,59 @@ async function scrape() {
     }
     return [...seen.values()];
   });
-  await browser.close();
   return ideas;
+}
+
+const ST_SYMBOLS = ["BTC.X", "ETH.X", "SOL.X", "XRP.X", "DOGE.X", "ADA.X", "AVAX.X", "LINK.X", "NEAR.X", "SUI.X", "PEPE.X", "SHIB.X"];
+
+async function scrapeStocktwits(page) {
+  // Warm up clearance on the main site, then call the JSON API in-page.
+  try {
+    await page.goto("https://stocktwits.com/", { waitUntil: "domcontentloaded", timeout: 45000 });
+    await page.waitForTimeout(5000);
+  } catch {}
+  const out = [];
+  for (const sym of ST_SYMBOLS) {
+    try {
+      const data = await page.evaluate(async (s) => {
+        const r = await fetch(`https://api.stocktwits.com/api/2/streams/symbol/${s}.json?limit=15`, { headers: { Accept: "application/json" } });
+        if (!r.ok) return null;
+        return await r.json();
+      }, sym);
+      if (!data || !Array.isArray(data.messages)) continue;
+      for (const m of data.messages) {
+        if (!m || typeof m.id !== "number" || typeof m.body !== "string") continue;
+        const sentiment = m.entities && m.entities.sentiment ? m.entities.sentiment.basic : null;
+        out.push({
+          id: m.id,
+          author: (m.user && m.user.username) || "",
+          title: m.body.slice(0, 200).replace(/\s+/g, " "),
+          text: m.body.slice(0, 1200),
+          symbol: sym.replace(/\.X$/, ""),
+          bullish: sentiment === "Bullish" ? true : sentiment === "Bearish" ? false : null,
+          likes: (m.likes && m.likes.total) || 0,
+          published: m.created_at || "",
+        });
+      }
+    } catch {}
+    await page.waitForTimeout(800);
+    if (out.length >= 120) break;
+  }
+  return out;
 }
 
 (async () => {
   loadEnv();
   if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL missing (.env)");
   const started = Date.now();
-  const ideas = await scrape();
+  const browser = await chromium.launch({ headless: true });
+  const page = await browser.newPage({
+    userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+    viewport: { width: 1366, height: 900 },
+  });
+  const ideas = await scrape(page);
+  const stIdeas = await scrapeStocktwits(page);
+  await browser.close();
   const sql = neon(process.env.DATABASE_URL);
   await ensureTable(sql);
   let inserted = 0;
@@ -117,5 +169,16 @@ async function scrape() {
   }
   // Keep 30 days.
   await sql`DELETE FROM tv_ideas WHERE collected_at < now() - interval '30 days'`;
-  console.log(JSON.stringify({ scraped: ideas.length, inserted, ms: Date.now() - started }));
+  let stInserted = 0;
+  for (const m of stIdeas) {
+    const pub = m.published && !Number.isNaN(Date.parse(m.published)) ? new Date(m.published).toISOString() : null;
+    const r = await sql`
+      INSERT INTO st_ideas (id, author, title, text, symbol_hint, bullish, likes, published_at)
+      VALUES (${m.id}, ${m.author}, ${m.title}, ${m.text}, ${m.symbol}, ${m.bullish}, ${m.likes}, ${pub})
+      ON CONFLICT (id) DO NOTHING
+      RETURNING 1`;
+    stInserted += r.length;
+  }
+  await sql`DELETE FROM st_ideas WHERE collected_at < now() - interval '30 days'`;
+  console.log(JSON.stringify({ scraped: ideas.length, inserted, stScraped: stIdeas.length, stInserted, ms: Date.now() - started }));
 })().catch((e) => { console.error("COLLECT-ERR", e.message); process.exit(1); });

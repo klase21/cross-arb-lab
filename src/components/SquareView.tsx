@@ -7,7 +7,7 @@ import { trustScore } from "@/lib/square";
 
 interface SquareSignal {
   id: string;
-  source: "square" | "tv";
+  source: "square" | "tv" | "st";
   author: string;
   authorVerified: boolean;
   asset: string;
@@ -33,7 +33,7 @@ interface SquareSignal {
 
 interface SquareTrader {
   author: string;
-  source: "square" | "tv";
+  source: "square" | "tv" | "st";
   verified: boolean;
   calls: number;
   wins: number;
@@ -48,8 +48,10 @@ type StatusFilter = "all" | "live" | "open" | "closed";
 type SideFilter = "all" | "LONG" | "SHORT";
 type MarketFilter = "all" | "SPOT" | "FUTURES";
 type ConfFilter = "all" | "high" | "medium" | "low";
-type SourceFilter = "all" | "square" | "tv";
+type SourceFilter = "all" | "square" | "tv" | "st";
 type SortKey = "roi" | "views" | "recent";
+
+const SRC_LABEL: Record<string, string> = { square: "SQ", tv: "TV", st: "ST" };
 
 function fmtPrice(n: number | null): string {
   if (n === null || !Number.isFinite(n)) return "-";
@@ -84,15 +86,25 @@ export default function SquareView() {
   const [marketF, setMarketF] = useState<MarketFilter>("all");
   const [confF, setConfF] = useState<ConfFilter>("all");
   const [sourceF, setSourceF] = useState<SourceFilter>("all");
+  const [showDetail, setShowDetail] = useState(false);
   const [sort, setSort] = useState<SortKey>("roi");
+  const [fng, setFng] = useState<{ value: number; label: string } | null>(null);
+  const [whales, setWhales] = useState<{ base: string; netUsd: number; bias: string; prints: number }[]>([]);
   const intervalSec = usePollingInterval();
+
+  const activeDetailCount =
+    (statusF !== "all" ? 1 : 0) + (marketF !== "all" ? 1 : 0) +
+    (confF !== "all" ? 1 : 0) + (sort !== "roi" ? 1 : 0);
 
   const load = useCallback(async () => {
     try {
       setLoading(true);
-      const [sqRes, tvRes] = await Promise.all([
+      const [sqRes, tvRes, stRes, fngRes, whaleRes] = await Promise.all([
         fetch("/api/square").catch(() => null),
         fetch("/api/tv").catch(() => null),
+        fetch("/api/st").catch(() => null),
+        fetch("/api/fng").catch(() => null),
+        fetch("/api/whales").catch(() => null),
       ]);
       const merged: SquareSignal[] = [];
       let scannedTotal = 0;
@@ -105,6 +117,21 @@ export default function SquareView() {
         const data = await tvRes.json();
         if (Array.isArray(data.signals)) merged.push(...data.signals);
         scannedTotal += data.postsScanned ?? 0;
+      }
+      if (stRes?.ok) {
+        const data = await stRes.json();
+        if (Array.isArray(data.signals)) merged.push(...data.signals);
+        scannedTotal += data.postsScanned ?? 0;
+      }
+      if (fngRes?.ok) {
+        const data = await fngRes.json();
+        if (data.current) setFng({ value: data.current.value, label: data.current.label });
+      }
+      if (whaleRes?.ok) {
+        const data = await whaleRes.json();
+        if (Array.isArray(data.rows)) {
+          setWhales(data.rows.filter((r: { bias: string }) => r.bias !== "NEUTRAL").slice(0, 10));
+        }
       }
       setSignals(merged);
       setScanned(scannedTotal);
@@ -161,8 +188,8 @@ export default function SquareView() {
       const avgRoi = rois.length > 0 ? rois.reduce((a, b) => a + b, 0) / rois.length : 0;
       const withStop = g.signals.filter(s => s.stop !== null).length;
       const withStopPct = g.signals.length > 0 ? (withStop / g.signals.length) * 100 : 0;
-      const author = key.replace(/^(square|tv):/, "");
-      const source = (key.startsWith("tv:") ? "tv" : "square") as "square" | "tv";
+      const author = key.replace(/^(square|tv|st):/, "");
+      const source = (key.startsWith("tv:") ? "tv" : key.startsWith("st:") ? "st" : "square") as "square" | "tv" | "st";
       out.push({
         author,
         source,
@@ -203,8 +230,26 @@ export default function SquareView() {
         {stats.best !== null && (
           <><span>·</span><span>{t("square.bestRoi")}: <b className={stats.best >= 0 ? "text-emerald-400" : "text-red-400"}>{stats.best >= 0 ? "+" : ""}{stats.best.toFixed(1)}%</b></span></>
         )}
+        {fng !== null && (
+          <><span>·</span><span title="Crypto Fear & Greed Index">F&G <b className={fng.value <= 25 ? "text-red-400" : fng.value < 45 ? "text-amber-300" : fng.value <= 55 ? "text-zinc-300" : "text-emerald-400"}>{fng.value}</b> <span className="text-zinc-500">{fng.label}</span></span></>
+        )}
         <span className="ml-auto">{t("common.lastUpdated")}: {lastUpdated ?? "-"}</span>
       </div>
+
+      {whales.length > 0 && (
+        <div className="flex items-center gap-1.5 overflow-x-auto text-[11px]">
+          <span className="text-zinc-500 whitespace-nowrap">🐋 {t("square.whales")}:</span>
+          {whales.map(w => (
+            <span
+              key={w.base}
+              title={`${w.base} net ${w.netUsd >= 0 ? "+" : ""}$${Math.abs(w.netUsd) >= 1_000_000 ? `${(w.netUsd / 1_000_000).toFixed(1)}M` : `${Math.round(w.netUsd / 1000)}K`} · ${w.prints} prints`}
+              className={`px-2 py-0.5 rounded-full font-bold whitespace-nowrap ${w.bias === "ACCUMULATE" ? "bg-emerald-500/15 text-emerald-300" : "bg-red-500/15 text-red-300"}`}
+            >
+              ${w.base} {w.bias === "ACCUMULATE" ? "▲" : "▼"}
+            </span>
+          ))}
+        </div>
+      )}
 
       <section>
         <h2 className="text-sm font-semibold mb-2">🏆 {t("square.leaderboard")}</h2>
@@ -230,7 +275,7 @@ export default function SquareView() {
                     <td className="px-3 py-2 text-zinc-500">{i + 1}</td>
                     <td className="px-3 py-2 font-medium">
                       {x.author}{x.verified && <span className="ml-1 text-sky-400">✓</span>}
-                      <span className="ml-1.5 text-[10px] px-1 py-px rounded bg-zinc-800 text-zinc-500">{x.source === "tv" ? "TV" : "SQ"}</span>
+                      <span className="ml-1.5 text-[10px] px-1 py-px rounded bg-zinc-800 text-zinc-500">{SRC_LABEL[x.source] ?? x.source}</span>
                     </td>
                     <td className="px-3 py-2 text-right">{x.calls}</td>
                     <td className="px-3 py-2 text-right text-zinc-400">{x.wins}-{x.losses}</td>
@@ -263,29 +308,36 @@ export default function SquareView() {
             placeholder={t("square.searchPlaceholder")}
             className="px-2.5 py-1 rounded-md text-xs bg-zinc-900 border border-zinc-700 text-zinc-200 placeholder:text-zinc-600 w-44"
           />
-          {(["all", "live", "open", "closed"] as StatusFilter[]).map(s => (
-            <button key={s} onClick={() => setStatusF(s)} className={selBtn(statusF === s)}>{t(`square.status.${s}`)}</button>
+          {(["all", "square", "tv", "st"] as SourceFilter[]).map(s => (
+            <button key={s} onClick={() => setSourceF(s)} className={selBtn(sourceF === s)}>{t(`square.src.${s}`)}</button>
           ))}
           {(["all", "LONG", "SHORT"] as SideFilter[]).map(s => (
             <button key={s} onClick={() => setSideF(s)} className={selBtn(sideF === s)}>
               {s === "all" ? t("square.all") : s}
             </button>
           ))}
-          {(["all", "SPOT", "FUTURES"] as MarketFilter[]).map(s => (
-            <button key={s} onClick={() => setMarketF(s)} className={selBtn(marketF === s)}>
-              {s === "all" ? t("square.allMarkets") : s}
-            </button>
-          ))}
-          {(["all", "high", "medium", "low"] as ConfFilter[]).map(s => (
-            <button key={s} onClick={() => setConfF(s)} className={selBtn(confF === s)}>{t(`square.conf.${s}`)}</button>
-          ))}
-          {(["all", "square", "tv"] as SourceFilter[]).map(s => (
-            <button key={s} onClick={() => setSourceF(s)} className={selBtn(sourceF === s)}>{t(`square.src.${s}`)}</button>
-          ))}
-          {(["roi", "views", "recent"] as SortKey[]).map(s => (
-            <button key={s} onClick={() => setSort(s)} className={selBtn(sort === s)}>↓ {t(`square.sort.${s}`)}</button>
-          ))}
+          <button onClick={() => setShowDetail(v => !v)} className={selBtn(showDetail)}>
+            {t("square.detail")}{activeDetailCount > 0 ? ` (${activeDetailCount})` : ""} {showDetail ? "▴" : "▾"}
+          </button>
         </div>
+        {showDetail && (
+          <div className="flex flex-wrap gap-1.5 mb-3 pl-1 border-l-2 border-zinc-800">
+            {(["all", "live", "open", "closed"] as StatusFilter[]).map(s => (
+              <button key={s} onClick={() => setStatusF(s)} className={selBtn(statusF === s)}>{t(`square.status.${s}`)}</button>
+            ))}
+            {(["all", "SPOT", "FUTURES"] as MarketFilter[]).map(s => (
+              <button key={s} onClick={() => setMarketF(s)} className={selBtn(marketF === s)}>
+                {s === "all" ? t("square.allMarkets") : s}
+              </button>
+            ))}
+            {(["all", "high", "medium", "low"] as ConfFilter[]).map(s => (
+              <button key={s} onClick={() => setConfF(s)} className={selBtn(confF === s)}>{t(`square.conf.${s}`)}</button>
+            ))}
+            {(["roi", "views", "recent"] as SortKey[]).map(s => (
+              <button key={s} onClick={() => setSort(s)} className={selBtn(sort === s)}>↓ {t(`square.sort.${s}`)}</button>
+            ))}
+          </div>
+        )}
 
         {loading && signals.length === 0 ? (
           <p className="text-xs text-zinc-500">{t("common.loading")}</p>
@@ -304,7 +356,7 @@ export default function SquareView() {
                 <div className="flex items-center gap-1.5 flex-wrap mb-1.5">
                   <span className="font-bold text-sm">${s.asset}</span>
                   <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${s.side === "LONG" ? "bg-emerald-500/15 text-emerald-300" : "bg-red-500/15 text-red-300"}`}>{s.side}</span>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-500">{(s.source ?? "square") === "tv" ? "TV" : "SQ"}</span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-500">{SRC_LABEL[s.source ?? "square"] ?? "SQ"}</span>
                   <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">{s.market}{s.leverage ? ` ${s.leverage}x` : ""}</span>
                   <span className={`text-[10px] px-1.5 py-0.5 rounded ${s.confidence === "high" ? "bg-sky-500/15 text-sky-300" : s.confidence === "medium" ? "bg-amber-500/15 text-amber-300" : "bg-zinc-800 text-zinc-500"}`}>
                     {t(`square.conf.${s.confidence}`)}

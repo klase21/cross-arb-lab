@@ -11,7 +11,7 @@ export type SquareStatus = "OPEN" | "LIVE" | "CLOSED_WIN" | "CLOSED_LOSS";
 
 export interface SquareSignal {
   id: string;
-  source: "square" | "tv";
+  source: "square" | "tv" | "st";
   postId: string;
   author: string;
   authorVerified: boolean;
