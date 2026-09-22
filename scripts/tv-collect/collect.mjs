@@ -11,6 +11,13 @@ import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+// Slice by code points and drop lone surrogates — a fixed-length cut through
+// an emoji otherwise produces invalid JSON for the Neon API.
+function clean(s, max) {
+  const sliced = Array.from(String(s ?? "")).slice(0, max).join("");
+  return sliced.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/g, "").replace(/(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, "");
+}
+
 function loadEnv() {
   try {
     const envPath = path.join(__dirname, "..", "..", ".env");
@@ -95,7 +102,7 @@ async function scrape(page) {
         symbol: m[1].toUpperCase().slice(0, 20),
         title: text.slice(0, 200),
         text: text.slice(0, 1500),
-        author,
+        author: author.slice(0, 80),
         published,
       });
       if (seen.size >= 80) break;
@@ -162,7 +169,7 @@ async function scrapeStocktwits(page) {
     const pub = idea.published && !Number.isNaN(Date.parse(idea.published)) ? new Date(idea.published).toISOString() : null;
     const r = await sql`
       INSERT INTO tv_ideas (url, author, title, text, symbol_hint, published_at)
-      VALUES (${idea.url}, ${idea.author}, ${idea.title}, ${idea.text}, ${idea.symbol}, ${pub})
+      VALUES (${idea.url}, ${clean(idea.author, 80)}, ${clean(idea.title, 200)}, ${clean(idea.text, 1500)}, ${idea.symbol}, ${pub})
       ON CONFLICT (url) DO NOTHING
       RETURNING 1`;
     inserted += r.length;
@@ -174,7 +181,7 @@ async function scrapeStocktwits(page) {
     const pub = m.published && !Number.isNaN(Date.parse(m.published)) ? new Date(m.published).toISOString() : null;
     const r = await sql`
       INSERT INTO st_ideas (id, author, title, text, symbol_hint, bullish, likes, published_at)
-      VALUES (${m.id}, ${m.author}, ${m.title}, ${m.text}, ${m.symbol}, ${m.bullish}, ${m.likes}, ${pub})
+      VALUES (${m.id}, ${clean(m.author, 80)}, ${clean(m.title, 200)}, ${clean(m.text, 1200)}, ${m.symbol}, ${m.bullish}, ${m.likes}, ${pub})
       ON CONFLICT (id) DO NOTHING
       RETURNING 1`;
     stInserted += r.length;
