@@ -184,32 +184,37 @@ interface UpbitNotice {
 
 async function fetchUpbitListings(): Promise<CexListing[]> {
   try {
-    const res = await fetch("https://api.upbit.com/v1/notices?page=1&per_page=30", {
+    const res = await fetch("https://api-manager.upbit.com/api/v1/announcements?os=web&category=trade&page=1&per_page=30", {
       headers: { accept: "application/json" },
       signal: AbortSignal.timeout(8000),
       next: { revalidate: 300 },
     });
     if (!res.ok) return [];
-    const data = await res.json() as { data?: { list?: UpbitNotice[] } } & { list?: UpbitNotice[] };
-    const notices = data.data?.list ?? data.list ?? [];
+    const data = await res.json() as { data?: { notices?: UpbitNotice[] } };
+    const notices = data.data?.notices ?? [];
     const out: CexListing[] = [];
     for (const notice of notices) {
       const title = notice.title ?? "";
-      if (!title.includes("상장")) continue;
-      // Titles like "[거래] 신규 상장 : 세이퍼프로토콜 (SAFER)" — extract ticker in parens
-      const match = title.match(/\(([A-Z0-9]{2,12})\)\s*$/);
-      const symbol = match ? match[1] : "";
-      out.push({
-        symbol: symbol || "-",
-        name: title.replace(/^\[[^\]]*\]\s*/, "").trim(),
-        source: "upbit",
-        title,
-        priceUsd: 0,
-        marketCap: 0,
-        volume24h: 0,
-        percentChange24h: 0,
-        dateIso: notice.listed_at ?? notice.first_listed_at ?? notice.created_at ?? new Date().toISOString(),
-      });
+      if (!title.includes("신규 거래지원") && !title.includes("상장")) continue;
+      // Titles like "페이팔 USD(PYUSD), ... 신규 거래지원 안내 (KRW, BTC, USDT 마켓)" — extract tickers in parens
+      const hits = title.match(/\(([A-Z0-9]{2,12})\)/g) ?? [];
+      for (const hit of hits) {
+        const symbol = hit.slice(1, -1);
+        if (symbol === "KRW" || symbol === "BTC" || symbol === "USDT") continue;
+        if (out.some(o => o.symbol === symbol)) continue;
+        out.push({
+          symbol,
+          name: title.trim(),
+          source: "upbit",
+          title,
+          priceUsd: 0,
+          marketCap: 0,
+          volume24h: 0,
+          percentChange24h: 0,
+          dateIso: notice.listed_at ?? notice.first_listed_at ?? new Date().toISOString(),
+        });
+        if (out.length >= 15) break;
+      }
       if (out.length >= 15) break;
     }
     return out;

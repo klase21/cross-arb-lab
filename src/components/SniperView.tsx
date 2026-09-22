@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { usePollingInterval } from "@/lib/use-polling";
 import { useLang } from "@/lib/i18n";
 import { loadSettings } from "@/components/SettingsView";
@@ -21,6 +22,14 @@ interface NewListing {
   detectedAt: string;
 }
 
+interface DelistNotice {
+  symbol: string;
+  market: string;
+  title: string;
+  dateIso: string;
+  kind: "caution" | "delist";
+}
+
 function fmtUsd(n: number): string {
   if (n >= 1_000_000_000) return `$${(n / 1_000_000_000).toFixed(2)}B`;
   if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`;
@@ -38,6 +47,7 @@ export default function SniperView() {
   const { t, lang } = useLang();
   const [waiting, setWaiting] = useState<WaitingCoin[]>([]);
   const [newListings, setNewListings] = useState<NewListing[]>([]);
+  const [delisting, setDelisting] = useState<DelistNotice[]>([]);
   const [tracked, setTracked] = useState(0);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
@@ -71,6 +81,33 @@ export default function SniperView() {
     }
   }, [lang]);
 
+  const lastDelistAlertedAt = useRef<string | null>(null);
+
+  useEffect(() => {
+    try { lastDelistAlertedAt.current = localStorage.getItem("sniperLastDelist"); } catch {}
+  }, []);
+
+  const fireDelistAlert = useCallback(async (items: DelistNotice[]) => {
+    if (items.length === 0) return;
+    const latest = items[0].dateIso;
+    if (lastDelistAlertedAt.current && Date.parse(latest) <= Date.parse(lastDelistAlertedAt.current)) return;
+    lastDelistAlertedAt.current = latest;
+    try { localStorage.setItem("sniperLastDelist", latest); } catch {}
+    const names = items.map(i => `${i.symbol}(${i.kind === "delist" ? "상폐" : "유의"})`).join(", ");
+    const body = lang === "ko" ? `업비트 상폐 주의보: ${names}` : `Upbit delisting watch: ${names}`;
+    if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
+      try { new Notification("⚠️ " + (lang === "ko" ? "상폐 스나이퍼" : "Delist Sniper"), { body, tag: "sniper-delist" }); } catch {}
+    }
+    const settings = loadSettings();
+    if (settings.telegramEnabled && settings.telegramBotToken && settings.telegramChatId) {
+      fetch(`https://api.telegram.org/bot${settings.telegramBotToken}/sendMessage`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ chat_id: settings.telegramChatId, text: `⚠️ ${body}` }),
+      }).catch(() => {});
+    }
+  }, [lang]);
+
   const load = useCallback(async () => {
     try {
       setLoading(true);
@@ -79,17 +116,21 @@ export default function SniperView() {
         const data = await res.json();
         setWaiting(Array.isArray(data.waiting) ? data.waiting : []);
         setNewListings(Array.isArray(data.newListings) ? data.newListings : []);
+        setDelisting(Array.isArray(data.delisting) ? data.delisting : []);
         setTracked(data.trackedUpbitMarkets ?? 0);
         // fireAlert dedupes internally via lastAlertedAt ref + localStorage.
         if (alertEnabled && Array.isArray(data.newListings) && data.newListings.length > 0) {
           fireAlert(data.newListings);
+        }
+        if (alertEnabled && Array.isArray(data.delisting) && data.delisting.length > 0) {
+          fireDelistAlert(data.delisting);
         }
       }
       setLastUpdated(new Date().toLocaleTimeString(lang === "ko" ? "ko-KR" : "en-US"));
     } catch {} finally {
       setLoading(false);
     }
-  }, [lang, alertEnabled, fireAlert]);
+  }, [lang, alertEnabled, fireAlert, fireDelistAlert]);
 
   useEffect(() => {
     load();
@@ -160,6 +201,35 @@ export default function SniperView() {
           </div>
         )}
       </div>
+
+      {/* Delisting watch — caution (유의) and end-of-support (거래지원 종료) */}
+      {delisting.length > 0 && (
+        <div className="rounded-xl border border-red-800/60 bg-red-950/20 p-4 mb-4">
+          <p className="text-sm font-semibold mb-1 text-red-300">
+            ⚠️ {lang === "ko" ? "업비트 상폐 주의보" : "Upbit Delisting Watch"}
+            <span className="ml-2 px-2 py-0.5 rounded-full bg-red-500/20 text-red-300 text-xs font-mono">{delisting.length}</span>
+          </p>
+          <p className="text-[11px] text-zinc-500 mb-3">
+            {lang === "ko"
+              ? "유의 지정 → 거래지원 종료 순으로 진행됩니다. 보유분은 미리 정리하세요."
+              : "Caution usually precedes end-of-support. Reduce exposure early."}
+          </p>
+          <div className="space-y-1.5">
+            {delisting.map(item => (
+              <div key={`${item.symbol}-${item.kind}`} className="flex items-center gap-2 text-xs flex-wrap">
+                <span className={`px-2 py-0.5 rounded font-bold ${item.kind === "delist" ? "bg-red-500/20 text-red-300" : "bg-amber-500/20 text-amber-300"}`}>
+                  {item.kind === "delist" ? (lang === "ko" ? "상폐" : "DELIST") : (lang === "ko" ? "유의" : "CAUTION")}
+                </span>
+                <Link href={`/?tab=kimchi`} className="font-semibold text-zinc-200 hover:text-emerald-400">{item.symbol}</Link>
+                <span className="text-zinc-500 truncate max-w-md" title={item.title}>{item.title}</span>
+                <span className="ml-auto text-zinc-600 font-mono text-[10px]">
+                  {new Date(item.dateIso).toLocaleString(lang === "ko" ? "ko-KR" : "en-US", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Waiting list */}
       <div className="rounded-xl border border-zinc-800 overflow-hidden">

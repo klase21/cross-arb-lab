@@ -114,16 +114,61 @@ export async function GET() {
     }
     waiting.sort((a, b) => b.marketCap - a.marketCap);
 
+    // Delisting watch: Upbit notices for caution designation (유의) and
+    // end-of-support (거래지원 종료). Symbols extracted from titles and
+    // confirmed against live Upbit markets.
+    type DelistNotice = { symbol: string; market: string; title: string; dateIso: string; kind: "caution" | "delist" };
+    const delisting: DelistNotice[] = [];
+    try {
+      const noticeRes = await fetch("https://api-manager.upbit.com/api/v1/announcements?os=web&category=trade&page=1&per_page=30", {
+        headers: { accept: "application/json" },
+        signal: AbortSignal.timeout(8000),
+        next: { revalidate: 300 },
+      });
+      if (noticeRes.ok) {
+        interface UpbitNoticeItem { id?: number; title?: string; listed_at?: string; first_listed_at?: string }
+        const noticeJson = (await noticeRes.json()) as unknown;
+        const data = (noticeJson as { data?: { notices?: unknown } }).data;
+        const notices: UpbitNoticeItem[] = Array.isArray((data as { notices?: unknown } | undefined)?.notices)
+          ? ((data as { notices: UpbitNoticeItem[] }).notices ?? [])
+          : [];
+        for (const notice of notices) {
+          const title = notice.title ?? "";
+          const flat = title.replace(/\s+/g, "");
+          const kind: DelistNotice["kind"] | null =
+            flat.includes("거래지원종료") ? "delist"
+            : flat.includes("유의") ? "caution"
+            : null;
+          if (!kind) continue;
+          const tickers = title.match(/\(([A-Z0-9]{2,12})\)/g) ?? [];
+          for (const hit of tickers) {
+            const symbol = hit.slice(1, -1);
+            if (!upbitMarkets.has(symbol)) continue;
+            if (delisting.some(d => d.symbol === symbol && d.kind === kind)) continue;
+            delisting.push({
+              symbol,
+              market: `KRW-${symbol}`,
+              title,
+              dateIso: notice.listed_at ?? notice.first_listed_at ?? new Date().toISOString(),
+              kind,
+            });
+          }
+          if (delisting.length >= 20) break;
+        }
+      }
+    } catch {}
+
     const payload = {
       waiting: waiting.slice(0, 60),
       newListings: newListings.slice(0, 20),
+      delisting,
       trackedUpbitMarkets: upbitMarkets.size,
       timestamp: new Date().toISOString(),
     };
     cache = { at: now, data: payload };
     return NextResponse.json(payload, { headers: { "Cache-Control": "public, max-age=60" } });
   } catch {
-    const fallback = cache?.data ?? { waiting: [], newListings: [], trackedUpbitMarkets: 0, timestamp: new Date().toISOString() };
+    const fallback = cache?.data ?? { waiting: [], newListings: [], delisting: [], trackedUpbitMarkets: 0, timestamp: new Date().toISOString() };
     return NextResponse.json(fallback, { headers: { "Cache-Control": "public, max-age=15" } });
   }
 }
