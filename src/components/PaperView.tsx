@@ -91,6 +91,7 @@ export default function PaperView() {
   const [pairDir, setPairDir] = useState<"u2b" | "b2u">("u2b");
   const [pairNotionalInput, setPairNotionalInput] = useState("1000");
   const [pairMsg, setPairMsg] = useState<string | null>(null);
+  const [posMsg, setPosMsg] = useState<string | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
   const [arbs, setArbs] = useState<FundRow[]>([]);
   const [fundBase, setFundBase] = useState<string | null>(null);
@@ -374,10 +375,11 @@ export default function PaperView() {
 
   const closeFund = (id: string) => {
     if (!account) return;
+    setFundMsg(null);
     const pos = account.funding.find(f => f.id === id);
     if (!pos) return;
     const row = arbs.find(r => r.base === pos.base);
-    if (!row || row.longMark === null || row.shortMark === null) return;
+    if (!row || row.longMark === null || row.shortMark === null) { setFundMsg(t("paper.noQuote")); return; }
     const result = closeFunding(account, id, {
       longApr: row.longApr, shortApr: row.shortApr,
       longMark: row.longMark, shortMark: row.shortMark,
@@ -410,16 +412,22 @@ export default function PaperView() {
 
   const closePosition = (v: PaperVenue, coin: string, qtyToClose: number) => {
     if (!account) return;
-    const item = byCoin.get(coin.toUpperCase());
-    if (!item) return;
-    const bid = v === "upbit" ? (item.upbitBid ?? item.upbitKrw) / fx : (item.globalBid ?? item.globalUsd);
-    const ask = v === "upbit" ? (item.upbitAsk ?? item.upbitKrw) / fx : (item.globalAsk ?? item.globalUsd);
-    if (!(bid > 0) || !(ask > 0)) return;
-    const result = executeMarket(account, { venue: v, coin, bidUsd: bid, askUsd: ask }, "sell", qtyToClose, "close");
-    if (!("error" in result)) {
-      setAccount(result.account);
-      saveAccount(result.account);
+    setPosMsg(null);
+    const sym = coin.trim().toUpperCase();
+    const base = buildQuote(byCoin.get(sym), v, fx);
+    let q = base;
+    if (!q && v === "binance") {
+      const e = extMap[sym];
+      if (e) q = { venue: v, coin: sym, bidUsd: e.bid, askUsd: e.ask };
     }
+    if (!q) { setPosMsg(t("paper.noQuote")); return; }
+    const result = executeMarket(account, q, "sell", qtyToClose, "close");
+    if ("error" in result) {
+      setPosMsg(result.error === "position" ? t("paper.noPosition") : t("paper.badQty"));
+      return;
+    }
+    setAccount(result.account);
+    saveAccount(result.account);
   };
 
   const selBtn = (active: boolean) =>
@@ -639,7 +647,8 @@ export default function PaperView() {
       </section>
 
       <section>
-        <h2 className="text-sm font-semibold mb-2">📦 {t("paper.positions")} ({account.positions.length})</h2>        {account.positions.length === 0 ? (
+        <h2 className="text-sm font-semibold mb-2">📦 {t("paper.positions")} ({account.positions.length})</h2>
+        {posMsg && <p className="text-[11px] text-amber-300 mb-2">{posMsg}</p>}        {account.positions.length === 0 ? (
           <p className="text-xs text-zinc-500">{t("paper.noPositions")}</p>
         ) : (
           <div className="overflow-x-auto rounded-lg border border-zinc-800">
