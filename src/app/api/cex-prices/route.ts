@@ -114,7 +114,15 @@ export async function GET(request: Request) {
   await Promise.all(fetchers);
 
   // Stage 2: verify top opportunities against real orderbooks — can 1M KRW actually fill?
-  const depth = await verifyDepth(findCexOpportunities(prices).slice(0, 10), fxRate);
+  // Best pair per coin first (else one coin's 5 pairs crowd out all other coins), then top 15 coins.
+  const allOpps = findCexOpportunities(prices);
+  const seenCoins = new Set<string>();
+  const perCoinOpps = allOpps.filter(opp => {
+    if (seenCoins.has(opp.coin)) return false;
+    seenCoins.add(opp.coin);
+    return true;
+  });
+  const depth = await verifyDepth(perCoinOpps.slice(0, 15), fxRate);
 
   return NextResponse.json({ prices, fxRate, depth, timestamp: new Date().toISOString() });
 }
