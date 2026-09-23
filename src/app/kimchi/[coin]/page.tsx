@@ -273,31 +273,72 @@ function KimchiDetailInner({ params }: { params: Promise<{ coin: string }> }) {
         {/* DEX Chart + GMGN verification — UI unmounted (on-chain plan pending; code kept in lib/dexscreener.ts + lib/gmgn.ts). */}
         {arbStats && (arbStats.summary.kimchiHits + arbStats.summary.invHits > 0) && (
           <div className="rounded-xl border border-zinc-800 p-6 mb-6">
-            <h2 className="text-base font-semibold mb-1">{lang === "ko" ? "1년 기회 통계" : "1-Year Opportunity Stats"}</h2>
-            <p className="text-[11px] text-zinc-500 mb-3">
-              {lang === "ko"
-                ? `기간 내 관측 집계(과거 시간봉+실시간 스캔) · 김치(프리미엄 1%↑) ${arbStats.summary.kimchiHits.toLocaleString()}회(최고 +${arbStats.summary.kimchiBest.toFixed(2)}%) · 보유(순수익) ${arbStats.summary.invHits.toLocaleString()}회(최고 +${arbStats.summary.invBest.toFixed(2)}%) · 기회 있던 날 ${arbStats.summary.activeDays}일`
-                : `Scanned every 10 min · Kimchi (premium 1%↑) ${arbStats.summary.kimchiHits.toLocaleString()} hits (best +${arbStats.summary.kimchiBest.toFixed(2)}%) · Inventory ${arbStats.summary.invHits.toLocaleString()} hits (best +${arbStats.summary.invBest.toFixed(2)}%) · ${arbStats.summary.activeDays} active days`}
-            </p>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-base font-semibold">{lang === "ko" ? "1년 기회 통계" : "1-Year Opportunity Stats"}</h2>
+              <div className="flex items-center gap-3 text-[11px] text-zinc-500">
+                <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-orange-500/80" />{lang === "ko" ? "김치 1%↑" : "Kimchi"}</span>
+                <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-emerald-500/80" />{lang === "ko" ? "보유 순수익" : "Inventory"}</span>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 mb-4">
+              {[
+                { label: lang === "ko" ? "김치 횟수" : "Kimchi hits", value: arbStats.summary.kimchiHits.toLocaleString(), sub: `최고 +${arbStats.summary.kimchiBest.toFixed(2)}%`, color: "text-orange-300" },
+                { label: lang === "ko" ? "보유 횟수" : "Inventory hits", value: arbStats.summary.invHits.toLocaleString(), sub: `최고 +${arbStats.summary.invBest.toFixed(2)}%`, color: "text-emerald-300" },
+                { label: lang === "ko" ? "합계" : "Total", value: (arbStats.summary.kimchiHits + arbStats.summary.invHits).toLocaleString(), sub: lang === "ko" ? "관측 횟수" : "observations", color: "text-zinc-100" },
+                { label: lang === "ko" ? "기회 있던 날" : "Active days", value: `${arbStats.summary.activeDays}일`, sub: lang === "ko" ? "1년간" : "in a year", color: "text-zinc-100" },
+                { label: lang === "ko" ? "월평균" : "Monthly avg", value: Math.round((arbStats.summary.kimchiHits + arbStats.summary.invHits) / 12).toLocaleString(), sub: lang === "ko" ? "회/월" : "/mo", color: "text-zinc-100" },
+              ].map(s => (
+                <div key={s.label} className="rounded-lg bg-zinc-900/60 border border-zinc-800 px-3 py-2 text-center">
+                  <p className="text-[10px] text-zinc-500">{s.label}</p>
+                  <p className={`text-lg font-bold font-mono ${s.color}`}>{s.value}</p>
+                  <p className="text-[10px] text-zinc-600 font-mono">{s.sub}</p>
+                </div>
+              ))}
+            </div>
             {(() => {
-              const byMonth = new Map<string, number>();
+              const byMonth = new Map<string, { k: number; i: number }>();
               for (const d of arbStats.daily) {
                 const m = d.day.slice(0, 7);
-                byMonth.set(m, (byMonth.get(m) ?? 0) + d.kimchiHits + d.invHits);
+                const e = byMonth.get(m) ?? { k: 0, i: 0 };
+                e.k += d.kimchiHits; e.i += d.invHits;
+                byMonth.set(m, e);
               }
               const months = [...byMonth.entries()].sort((a, b) => a[0].localeCompare(b[0])).slice(-12);
-              const max = Math.max(...months.map(([, v]) => v), 1);
+              const max = Math.max(...months.map(([, v]) => v.k + v.i), 1);
+              const H = 120;
               return (
-                <div className="flex items-end gap-1.5 h-20">
-                  {months.map(([m, v]) => (
-                    <div key={m} className="flex-1 flex flex-col items-center gap-1" title={`${m}: ${v.toLocaleString()}회`}>
-                      <div className="w-full rounded-sm bg-emerald-600/70" style={{ height: `${Math.max((v / max) * 64, 2)}px` }} />
-                      <span className="text-[9px] text-zinc-600 font-mono">{m.slice(2)}</span>
-                    </div>
-                  ))}
+                <div>
+                  <div className="flex items-end gap-2" style={{ height: H + 34 }}>
+                    {months.map(([m, v]) => {
+                      const total = v.k + v.i;
+                      const kH = total > 0 ? Math.max((v.k / max) * H, v.k > 0 ? 3 : 0) : 0;
+                      const iH = total > 0 ? Math.max((v.i / max) * H, v.i > 0 ? 3 : 0) : 0;
+                      const yy = m.slice(0, 4);
+                      const mm = String(Number(m.slice(5)));
+                      return (
+                        <div key={m} className="flex-1 flex flex-col items-center justify-end gap-1 h-full"
+                          title={`${yy}-${m.slice(5)}: ${lang === "ko" ? "김치" : "Kimchi"} ${v.k.toLocaleString()}회 / ${lang === "ko" ? "보유" : "Inv"} ${v.i.toLocaleString()}회`}>
+                          {total > 0 && <span className="text-[9px] font-mono text-zinc-400">{total >= 1000 ? `${(total / 1000).toFixed(1)}k` : total}</span>}
+                          <div className="w-full flex flex-col justify-end rounded-md overflow-hidden bg-zinc-900" style={{ height: H }}>
+                            <div className="w-full bg-emerald-500/80" style={{ height: iH }} />
+                            <div className="w-full bg-orange-500/80" style={{ height: kH }} />
+                          </div>
+                          <span className="text-[10px] font-mono text-zinc-500 leading-tight text-center">
+                            {mm}{lang === "ko" ? "월" : ""}
+                            {m.slice(5) === "01" && <span className="block text-zinc-600">'{yy.slice(2)}</span>}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               );
             })()}
+            <p className="text-[10px] text-zinc-600 mt-2">
+              {lang === "ko"
+                ? "과거 1년 시간봉 + 실시간 스캔 집계. 시간봉 시대(과거)는 시간당 최대 24회/일, 실시간 시대는 10분 스캔이라 횟수 스케일이 다릅니다."
+                : "Past 1y hourly candles + live scans. Hourly era caps at 24/day; live era scans every 10 min."}
+            </p>
           </div>
         )}
         <HistoryChart symbol={coin} />
