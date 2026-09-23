@@ -46,11 +46,15 @@ export async function GET(req: Request) {
         bids: depth.bids.slice(0, 12).map(([p, q]) => ({ p: Number(p), q: Number(q) })),
         asks: depth.asks.slice(0, 12).map(([p, q]) => ({ p: Number(p), q: Number(q) })),
       },
-      trades: trades.slice(-30).reverse().map(t => ({
-        p: Number(t.price),
-        q: Number(t.qty),
-        t: t.time,
-        sell: t.isBuyerMaker,
+      trades: (Array.isArray(trades) ? trades : []).slice(-30).reverse().map((t: {
+        p?: string; q?: string; T?: number; m?: boolean;
+        price?: string; qty?: string; time?: number; isBuyerMaker?: boolean;
+      }) => ({
+        // Binance aggTrades use short keys (p/q/T/m); fall back to long names.
+        p: Number(t.p ?? t.price) || 0,
+        q: Number(t.q ?? t.qty) || 0,
+        t: t.T ?? t.time ?? 0,
+        sell: t.m ?? t.isBuyerMaker ?? false,
       })),
       funding: funding.map(f => ({ r: Number(f.fundingRate), t: f.fundingTime })),
       oiHist: oiHist.map(o => ({ v: Number(o.sumOpenInterest), t: o.timestamp })),

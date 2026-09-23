@@ -293,7 +293,7 @@ export default function FuturesView() {
                     {detail.trades.map((x, i) => (
                       <div key={i} className="flex justify-between">
                         <span className={x.sell ? "text-red-300/90" : "text-emerald-300/90"}>{fmtPrice(x.p)}</span>
-                        <span className="text-zinc-500">{x.q.toFixed(3)}</span>
+                        <span className="text-zinc-500">{typeof x.q === "number" ? x.q.toFixed(3) : "-"}</span>
                       </div>
                     ))}
                   </div>
