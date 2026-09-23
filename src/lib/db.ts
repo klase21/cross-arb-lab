@@ -93,3 +93,78 @@ export async function historyStatus(): Promise<{ enabled: boolean; latest: strin
     return { enabled: true, latest: null, rows7d: 0 };
   }
 }
+
+// --- Daily arb-opportunity rollup (1-year retention, tiny) ---
+// One row per (day, coin, type). `hits` = number of 10-min scans that day
+// where the opportunity was observable; `bestNet` = max net pct seen.
+
+export type ArbStatType = "kimchi" | "inventory";
+
+export async function ensureArbStatsSchema(): Promise<void> {
+  const sql = getClient();
+  if (!sql) throw new Error("DATABASE_URL is not set");
+  await sql`
+    CREATE TABLE IF NOT EXISTS arb_daily_stats (
+      day DATE NOT NULL,
+      coin TEXT NOT NULL,
+      type TEXT NOT NULL,
+      hits INTEGER NOT NULL DEFAULT 0,
+      best_net DOUBLE PRECISION NOT NULL DEFAULT 0,
+      PRIMARY KEY (day, coin, type)
+    )`;
+}
+
+export async function upsertArbDaily(
+  dayIso: string,
+  rows: { coin: string; type: ArbStatType; net: number }[],
+): Promise<number> {
+  const sql = getClient();
+  if (!sql || rows.length === 0) return 0;
+  const result = await sql`
+    INSERT INTO arb_daily_stats (day, coin, type, hits, best_net)
+    SELECT * FROM UNNEST(
+      ${rows.map(() => dayIso)}::date[],
+      ${rows.map(r => r.coin)}::text[],
+      ${rows.map(r => r.type)}::text[],
+      ${rows.map(() => 1)}::int[],
+      ${rows.map(r => r.net)}::float8[]
+    ) AS t(day, coin, type, hits, best_net)
+    ON CONFLICT (day, coin, type) DO UPDATE SET
+      hits = arb_daily_stats.hits + 1,
+      best_net = GREATEST(arb_daily_stats.best_net, EXCLUDED.best_net)
+    RETURNING 1`;
+  return Array.isArray(result) ? result.length : 0;
+}
+
+export async function pruneArbStats(retentionDays: number): Promise<void> {
+  const sql = getClient();
+  if (!sql) return;
+  await sql`
+    DELETE FROM arb_daily_stats
+    WHERE day < CURRENT_DATE - (${retentionDays}::int * interval '1 day')`;
+}
+
+export interface ArbStatRow {
+  day: string;
+  coin: string;
+  type: string;
+  hits: number;
+  bestNet: number;
+}
+
+export async function queryArbStats(coin: string | null, sinceIso: string): Promise<ArbStatRow[]> {
+  const sql = getClient();
+  if (!sql) return [];
+  const rows = coin
+    ? await sql`
+        SELECT day::text AS day, coin, type, hits, best_net AS "bestNet"
+        FROM arb_daily_stats
+        WHERE coin = ${coin.toUpperCase()} AND day >= ${sinceIso}::date
+        ORDER BY day ASC`
+    : await sql`
+        SELECT day::text AS day, coin, type, hits, best_net AS "bestNet"
+        FROM arb_daily_stats
+        WHERE day >= ${sinceIso}::date
+        ORDER BY day ASC`;
+  return rows as ArbStatRow[];
+}

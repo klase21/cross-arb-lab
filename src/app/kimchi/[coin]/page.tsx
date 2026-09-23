@@ -56,6 +56,10 @@ function KimchiDetailInner({ params }: { params: Promise<{ coin: string }> }) {
   const [wallet, setWallet] = useState<{ wallet_state: string; block_state: string; message: string } | null>(null);
   const [gate, setGate] = useState<{ chains: { name: string; depositOk: boolean; withdrawOk: boolean; delayed: boolean }[] } | null>(null);
   const [upbitNets, setUpbitNets] = useState<{ net: string; name: string; fee: number; wallet_state: string; block_state: string; message: string }[]>([]);
+  const [arbStats, setArbStats] = useState<{
+    daily: { day: string; kimchiHits: number; kimchiBest: number; invHits: number; invBest: number }[];
+    summary: { kimchiHits: number; kimchiBest: number; invHits: number; invBest: number; activeDays: number };
+  } | null>(null);
 
   const refreshLive = useCallback(async () => {
     try {
@@ -104,6 +108,10 @@ function KimchiDetailInner({ params }: { params: Promise<{ coin: string }> }) {
       setLoading(false);
     });
     refreshLive();
+    fetch(`/api/arb-stats?coin=${encodeURIComponent(coin)}&days=365`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (!cancelled && d) setArbStats({ daily: d.daily ?? [], summary: d.summary }); })
+      .catch(() => {});
     return () => { cancelled = true; };
   }, [coin, refreshLive]);
 
@@ -263,6 +271,35 @@ function KimchiDetailInner({ params }: { params: Promise<{ coin: string }> }) {
         </div>
 
         {/* DEX Chart + GMGN verification — UI unmounted (on-chain plan pending; code kept in lib/dexscreener.ts + lib/gmgn.ts). */}
+        {arbStats && (arbStats.summary.kimchiHits + arbStats.summary.invHits > 0) && (
+          <div className="rounded-xl border border-zinc-800 p-6 mb-6">
+            <h2 className="text-base font-semibold mb-1">{lang === "ko" ? "1년 기회 통계" : "1-Year Opportunity Stats"}</h2>
+            <p className="text-[11px] text-zinc-500 mb-3">
+              {lang === "ko"
+                ? `10분마다 관측 집계 · 김치(프리미엄 1%↑) ${arbStats.summary.kimchiHits.toLocaleString()}회(최고 +${arbStats.summary.kimchiBest.toFixed(2)}%) · 보유(순수익) ${arbStats.summary.invHits.toLocaleString()}회(최고 +${arbStats.summary.invBest.toFixed(2)}%) · 기회 있던 날 ${arbStats.summary.activeDays}일`
+                : `Scanned every 10 min · Kimchi (premium 1%↑) ${arbStats.summary.kimchiHits.toLocaleString()} hits (best +${arbStats.summary.kimchiBest.toFixed(2)}%) · Inventory ${arbStats.summary.invHits.toLocaleString()} hits (best +${arbStats.summary.invBest.toFixed(2)}%) · ${arbStats.summary.activeDays} active days`}
+            </p>
+            {(() => {
+              const byMonth = new Map<string, number>();
+              for (const d of arbStats.daily) {
+                const m = d.day.slice(0, 7);
+                byMonth.set(m, (byMonth.get(m) ?? 0) + d.kimchiHits + d.invHits);
+              }
+              const months = [...byMonth.entries()].sort((a, b) => a[0].localeCompare(b[0])).slice(-12);
+              const max = Math.max(...months.map(([, v]) => v), 1);
+              return (
+                <div className="flex items-end gap-1.5 h-20">
+                  {months.map(([m, v]) => (
+                    <div key={m} className="flex-1 flex flex-col items-center gap-1" title={`${m}: ${v.toLocaleString()}회`}>
+                      <div className="w-full rounded-sm bg-emerald-600/70" style={{ height: `${Math.max((v / max) * 64, 2)}px` }} />
+                      <span className="text-[9px] text-zinc-600 font-mono">{m.slice(2)}</span>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+          </div>
+        )}
         <HistoryChart symbol={coin} />
 
         <div className="rounded-xl border border-zinc-800 p-6 mb-6">
