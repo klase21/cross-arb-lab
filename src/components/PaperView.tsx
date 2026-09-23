@@ -4,15 +4,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLang } from "@/lib/i18n";
 import {
   accrueFunding,
-  cancelOrder,
   checkTpSl,
   clearAccount,
   clearEquity,
   closeFunding,
   consumeDraft,
-  executeLimit,
   executeMarket,
-  executePair,
   forceCloseFunding,
   forceClosePosition,
   fundingPricePnl,
@@ -20,16 +17,13 @@ import {
   loadEquity,
   matchLimitOrders,
   newAccount,
-  openFunding,
   recordEquity,
   saveAccount,
   setTpSl,
   valuate,
-  PAPER_FEES,
   type EquityPoint,
   type PaperAccount,
   type PaperQuote,
-  type PaperSide,
   type PaperVenue,
 } from "@/lib/paper";
 import {
@@ -41,7 +35,6 @@ import {
   type AutoStatus,
 } from "@/lib/auto";
 import { fmtQty, fmtUsd2 } from "@/lib/format";
-import CandleChart from "@/components/CandleChart";
 
 interface FundRow {
   base: string;
@@ -94,28 +87,11 @@ export default function PaperView() {
   const [items, setItems] = useState<KimchiItem[]>([]);
   const [fx, setFx] = useState(1386);
   const [symbol, setSymbol] = useState("BTC");
-  const [venue, setVenue] = useState<PaperVenue>("upbit");
-  const [side, setSide] = useState<PaperSide>("buy");
-  const [qtyInput, setQtyInput] = useState("0.01");
-  const [msg, setMsg] = useState<string | null>(null);
-  const [pairDir, setPairDir] = useState<"u2b" | "b2u">("u2b");
-  const [pairNotionalInput, setPairNotionalInput] = useState("1000");
-  const [pairMsg, setPairMsg] = useState<string | null>(null);
   const [posMsg, setPosMsg] = useState<string | null>(null);
   const [armed, setArmed] = useState<string | null>(null);
   const [armedFund, setArmedFund] = useState<string | null>(null);
-  const [orderType, setOrderType] = useState<"market" | "limit">("market");
-  const [limitPrice, setLimitPrice] = useState("");
-  const [book, setBook] = useState<{ bids: [number, number][]; asks: [number, number][] }>({ bids: [], asks: [] });
-  const [tape, setTape] = useState<{ p: number; q: number; t: number; sell: boolean }[]>([]);
-  const [coinSearch, setCoinSearch] = useState("");
-  const [ticker24, setTicker24] = useState<{ change: number; high: number; low: number; vol: number } | null>(null);
-  const [candles, setCandles] = useState<{ t: number; o: number; h: number; l: number; c: number; v: number }[]>([]);
-  const [chartTf, setChartTf] = useState("1h");
   const [confirmReset, setConfirmReset] = useState(false);
   const [arbs, setArbs] = useState<FundRow[]>([]);
-  const [fundBase, setFundBase] = useState<string | null>(null);
-  const [fundNotional, setFundNotional] = useState("1000");
   const [fundMsg, setFundMsg] = useState<string | null>(null);
   const [autoCfg, setAutoCfgState] = useState<AutoConfig>(DEFAULT_AUTO_CONFIG);
   const [autoStatus, setAutoStatus] = useState<AutoStatus>({ lastTick: null, cycles: 0, spotFills: 0, fundOpens: 0, fundCloses: 0 });
@@ -132,8 +108,6 @@ export default function PaperView() {
           cfg.spotNotionalUsd = sizeParam;
           cfg.fundingNotionalUsd = sizeParam;
           saveAutoConfig(cfg);
-          setPairNotionalInput(String(sizeParam));
-          setFundNotional(String(sizeParam));
         }
       } catch {}
       setAutoCfgState(cfg);
@@ -229,14 +203,6 @@ export default function PaperView() {
     return map;
   }, [items]);
 
-  const topCoins = useMemo(() => {
-    const set = items.slice(0, 12).map(i => i.coin.toUpperCase());
-    const cur = symbol.trim().toUpperCase();
-    if (cur && !set.includes(cur)) set.push(cur);
-    const q = coinSearch.trim().toUpperCase();
-    return (q ? set.filter(c => c.includes(q)) : set).slice(0, 13);
-  }, [items, symbol, coinSearch]);
-
   // Binance direct fallback for non-KRW coins (e.g. NIL): vision is CORS-open.
   // Covers the ticket symbol plus any open Binance positions missing from kimchi.
   const [extMap, setExtMap] = useState<Record<string, { bid: number; ask: number }>>({});
@@ -277,61 +243,23 @@ export default function PaperView() {
     return q ? { venue: v, coin: sym, bidUsd: q.bid, askUsd: q.ask } : null;
   }, [byCoin, fx, extMap]);
 
-  // Exchange data: Binance book + tape + 24h ticker + candles for the ticket symbol.
-  useEffect(() => {
-    let cancelled = false;
-    const sym = symbol.trim().toUpperCase();
-    if (!/^[A-Z0-9]{2,12}$/.test(sym)) return;
-    const kickoff = setTimeout(async () => {
-      try {
-        const [depthRes, t24Res, klRes, tapeRes] = await Promise.all([
-          fetch(`https://data-api.binance.vision/api/v3/depth?symbol=${sym}USDT&limit=10`).catch(() => null),
-          fetch(`https://data-api.binance.vision/api/v3/ticker/24hr?symbol=${sym}USDT`).catch(() => null),
-          fetch(`/api/candles?symbol=${sym}USDT&interval=${chartTf}`).catch(() => null),
-          fetch(`https://data-api.binance.vision/api/v3/aggTrades?symbol=${sym}USDT&limit=24`).catch(() => null),
-        ]);
-        if (cancelled) return;
-        if (depthRes?.ok) {
-          const d = await depthRes.json() as { bids: [string, string][]; asks: [string, string][] };
-          setBook({
-            bids: (d.bids ?? []).slice(0, 8).map(([p, q]) => [Number(p), Number(q)]),
-            asks: (d.asks ?? []).slice(0, 8).map(([p, q]) => [Number(p), Number(q)]),
-          });
-        } else {
-          setBook({ bids: [], asks: [] });
-        }
-        if (t24Res?.ok) {
-          const d = await t24Res.json() as { priceChangePercent: string; highPrice: string; lowPrice: string; quoteVolume: string };
-          setTicker24({
-            change: Number.parseFloat(d.priceChangePercent) || 0,
-            high: Number.parseFloat(d.highPrice) || 0,
-            low: Number.parseFloat(d.lowPrice) || 0,
-            vol: Number.parseFloat(d.quoteVolume) || 0,
-          });
-        } else {
-          setTicker24(null);
-        }
-        if (klRes?.ok) {
-          const d = await klRes.json();
-          if (!cancelled && Array.isArray(d.candles)) setCandles(d.candles);
-        }
-        if (tapeRes?.ok) {
-          const d = await tapeRes.json() as { p: string; q: string; T: number; m: boolean }[];
-          if (!cancelled && Array.isArray(d)) {
-            setTape(d.slice(-16).reverse().map(x => ({
-              p: Number.parseFloat(x.p),
-              q: Number.parseFloat(x.q),
-              t: x.T,
-              sell: x.m === true,
-            })).filter(x => x.p > 0));
-          }
-        } else {
-          setTape([]);
-        }
-      } catch {}
-    }, 300);
-    return () => { cancelled = true; clearTimeout(kickoff); };
-  }, [symbol, chartTf]);
+  const mark = useCallback((v: PaperVenue, coin: string): number | null => {
+    const sym = coin.trim().toUpperCase();
+    const item = byCoin.get(sym);
+    if (!item) {
+      if (v === "binance") {
+        const q = extMap[sym];
+        return q && q.ask > 0 ? q.ask : null;
+      }
+      return null;
+    }
+    if (v === "upbit") {
+      const bid = (item.upbitBid ?? item.upbitKrw) / fx;
+      return bid > 0 ? bid : null;
+    }
+    const ask = item.globalAsk ?? item.globalUsd;
+    return ask > 0 ? ask : null;
+  }, [byCoin, fx, extMap]);
 
   // Match resting limit orders whenever marks refresh.
   useEffect(() => {
@@ -355,75 +283,6 @@ export default function PaperView() {
     }, 500);
     return () => clearTimeout(t);
   }, [items, extMap, quoteFor]);
-
-  const quote: PaperQuote | null = useMemo(() => {
-    const sym = symbol.trim().toUpperCase();
-    const base = buildQuote(byCoin.get(sym), venue, fx);
-    if (base) return base;
-    if (venue !== "binance") return null;
-    const q = extMap[sym];
-    return q ? { venue, coin: sym, bidUsd: q.bid, askUsd: q.ask } : null;
-  }, [byCoin, symbol, venue, fx, extMap]);
-
-  const pairBuyVenue: PaperVenue = pairDir === "u2b" ? "upbit" : "binance";
-  const pairSellVenue: PaperVenue = pairDir === "u2b" ? "binance" : "upbit";
-  const pairBuyQ = useMemo(() => {
-    const sym = symbol.trim().toUpperCase();
-    const base = buildQuote(byCoin.get(sym), pairBuyVenue, fx);
-    if (base) return base;
-    if (pairBuyVenue !== "binance") return null;
-    const q = extMap[sym];
-    return q ? { venue: pairBuyVenue, coin: sym, bidUsd: q.bid, askUsd: q.ask } : null;
-  }, [byCoin, symbol, pairBuyVenue, fx, extMap]);
-  const pairSellQ = useMemo(() => {
-    const sym = symbol.trim().toUpperCase();
-    const base = buildQuote(byCoin.get(sym), pairSellVenue, fx);
-    if (base) return base;
-    if (pairSellVenue !== "binance") return null;
-    const q = extMap[sym];
-    return q ? { venue: pairSellVenue, coin: sym, bidUsd: q.bid, askUsd: q.ask } : null;
-  }, [byCoin, symbol, pairSellVenue, fx, extMap]);
-  const pairNotional = Number.parseFloat(pairNotionalInput);
-  const pairQty = pairBuyQ && Number.isFinite(pairNotional) && pairNotional > 0 ? pairNotional / pairBuyQ.askUsd : 0;
-  const pairPreview = useMemo(() => {
-    if (!pairBuyQ || !pairSellQ || !(pairQty > 0)) return null;
-    const buyGross = pairQty * pairBuyQ.askUsd;
-    const sellGross = pairQty * pairSellQ.bidUsd;
-    const fees = buyGross * PAPER_FEES[pairBuyQ.venue] + sellGross * PAPER_FEES[pairSellQ.venue];
-    return { buyGross, sellGross, fees, net: sellGross - buyGross - fees, prem: ((pairSellQ.bidUsd - pairBuyQ.askUsd) / pairBuyQ.askUsd) * 100 };
-  }, [pairBuyQ, pairSellQ, pairQty]);
-
-  const submitPair = () => {
-    if (!account) return;
-    setPairMsg(null);
-    if (!pairBuyQ || !pairSellQ || !(pairQty > 0)) { setPairMsg(t("paper.badQty")); return; }
-    const result = executePair(account, pairBuyQ, pairSellQ, pairQty, `pair:${symbol.trim().toUpperCase()}`);
-    if ("error" in result) {
-      setPairMsg(result.error === "cash" ? t("paper.noCash") : result.error === "position" ? t("paper.pairNoInventory") : t("paper.badQty"));
-      return;
-    }
-    setAccount(result.account);
-    saveAccount(result.account);
-    setPairMsg(t("paper.filled"));
-  };
-
-  const mark = useCallback((v: PaperVenue, coin: string): number | null => {
-    const sym = coin.trim().toUpperCase();
-    const item = byCoin.get(sym);
-    if (!item) {
-      if (v === "binance") {
-        const q = extMap[sym];
-        return q && q.ask > 0 ? q.ask : null;
-      }
-      return null;
-    }
-    if (v === "upbit") {
-      const bid = (item.upbitBid ?? item.upbitKrw) / fx;
-      return bid > 0 ? bid : null;
-    }
-    const ask = item.globalAsk ?? item.globalUsd;
-    return ask > 0 ? ask : null;
-  }, [byCoin, fx, extMap]);
 
   useEffect(() => {
     const timer = setInterval(() => setAutoStatus(loadAutoStatus()), 15000);
@@ -502,27 +361,8 @@ export default function PaperView() {
     });
   };
 
-  const openFund = () => {
+  const closeFund = (id: string) => {
     if (!account) return;
-    setFundMsg(null);
-    const row = arbs.find(r => r.base === fundBase);
-    const notional = Number.parseFloat(fundNotional);
-    if (!row || !Number.isFinite(notional) || notional <= 0) { setFundMsg(t("paper.badQty")); return; }
-    if (row.longMark === null || row.shortMark === null) { setFundMsg(t("paper.noQuote")); return; }
-    const result = openFunding(account, {
-      base: row.base, longVenue: row.longVenue, shortVenue: row.shortVenue,
-      notionalUsd: notional, longMark: row.longMark, shortMark: row.shortMark,
-    });
-    if ("error" in result) {
-      setFundMsg(result.error === "cash" ? t("paper.noCash") : result.error === "exists" ? t("paper.fundExists") : t("paper.badQty"));
-      return;
-    }
-    setAccount(result.account);
-    saveAccount(result.account);
-    setFundMsg(t("paper.filled"));
-  };
-
-  const closeFund = (id: string) => {    if (!account) return;
     setFundMsg(null);
     const pos = account.funding.find(f => f.id === id);
     if (!pos) return;
@@ -548,53 +388,6 @@ export default function PaperView() {
       longMark: row.longMark, shortMark: row.shortMark,
       // eslint-disable-next-line react-hooks/purity -- event handler, not render
     }, Date.now());
-    if (!("error" in result)) {
-      setAccount(result.account);
-      saveAccount(result.account);
-    }
-  };
-
-  const qty = Number.parseFloat(qtyInput);
-  const limitPx = Number.parseFloat(limitPrice);
-  const execPrice = orderType === "limit" && Number.isFinite(limitPx) && limitPx > 0
-    ? limitPx
-    : quote ? (side === "buy" ? quote.askUsd : quote.bidUsd) : 0;
-  const estGross = Number.isFinite(qty) && qty > 0 ? qty * execPrice : 0;
-  const estFee = estGross * PAPER_FEES[venue];
-  const maxBuyQty = account && quote && quote.askUsd > 0
-    ? account.cashUsd / (quote.askUsd * (1 + PAPER_FEES[venue])) : 0;
-  const maxSellQty = account && quote
-    ? (account.positions.find(p => p.venue === quote.venue && p.coin === quote.coin)?.qty ?? 0) : 0;
-
-  const submit = (s: PaperSide) => {
-    if (!account || !quote) return;
-    setMsg(null);
-    if (!Number.isFinite(qty) || qty <= 0) { setMsg(t("paper.badQty")); return; }
-    if (orderType === "limit") {
-      if (!Number.isFinite(limitPx) || limitPx <= 0) { setMsg(t("paper.badPrice")); return; }
-      const result = executeLimit(account, quote, s, qty, limitPx, `${quote.coin} ${quote.venue} limit`);
-      if ("error" in result) {
-        setMsg(result.error === "cash" ? t("paper.noCash") : result.error === "position" ? t("paper.noPosition") : t("paper.badQty"));
-        return;
-      }
-      setAccount(result.account);
-      saveAccount(result.account);
-      setMsg(t("paper.orderPlaced"));
-      return;
-    }
-    const result = executeMarket(account, quote, s, qty, `${quote.coin} ${quote.venue}`);
-    if ("error" in result) {
-      setMsg(result.error === "cash" ? t("paper.noCash") : result.error === "position" ? t("paper.noPosition") : t("paper.badQty"));
-      return;
-    }
-    setAccount(result.account);
-    saveAccount(result.account);
-    setMsg(t("paper.filled"));
-  };
-
-  const cancelPending = (id: string) => {
-    if (!account) return;
-    const result = cancelOrder(account, id);
     if (!("error" in result)) {
       setAccount(result.account);
       saveAccount(result.account);
@@ -649,9 +442,6 @@ export default function PaperView() {
     setAccount(result.account);
     saveAccount(result.account);
   };
-
-  const selBtn = (active: boolean) =>
-    `px-2.5 py-1 rounded-md text-xs whitespace-nowrap transition-colors ${active ? "bg-emerald-600 text-white" : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700"}`;
 
   if (!account) {
     return (
@@ -729,8 +519,6 @@ export default function PaperView() {
                 const v = Number.parseFloat(e.target.value);
                 if (Number.isFinite(v) && v > 0) {
                   setAuto({ spotNotionalUsd: v, fundingNotionalUsd: v });
-                  setPairNotionalInput(String(v));
-                  setFundNotional(String(v));
                 }
               }}
               inputMode="decimal"
@@ -768,318 +556,20 @@ export default function PaperView() {
         })()}
       </section>
 
-      <section className="rounded-xl border border-zinc-800 p-4">
-        <h2 className="text-sm font-semibold mb-3">🎫 {t("paper.ticket")}</h2>
-        <div className="flex flex-wrap items-center gap-1.5 mb-3">
-          {topCoins.map(c => (
-            <button key={c} onClick={() => setSymbol(c)} className={selBtn(symbol.trim().toUpperCase() === c)}>
-              {c}
-            </button>
-          ))}
-          <input
-            value={symbol}
-            onChange={e => setSymbol(e.target.value.toUpperCase())}
-            placeholder="BTC"
-            className="px-2.5 py-1 rounded-md text-xs bg-zinc-900 border border-zinc-700 font-mono w-24"
-          />
-          <input
-            value={coinSearch}
-            onChange={e => setCoinSearch(e.target.value.toUpperCase())}
-            placeholder={t("paper.searchSymbol")}
-            className="px-2.5 py-1 rounded-md text-xs bg-zinc-900 border border-zinc-700 font-mono w-28 placeholder:text-zinc-600"
-          />
-          <span className="ml-auto text-right">
-            <b className="font-mono text-base">{quote ? fmtUsd(side === "buy" ? quote.askUsd : quote.bidUsd) : "-"}</b>
-            {ticker24 && (
-              <span className={`ml-2 font-mono text-xs ${ticker24.change >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                {ticker24.change >= 0 ? "+" : ""}{ticker24.change.toFixed(2)}%
-              </span>
-            )}
-          </span>
-        </div>
-        {ticker24 && (
-          <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-zinc-500 mb-3">
-            <span>H: <b className="font-mono text-zinc-300">{fmtUsd(ticker24.high)}</b></span>
-            <span>L: <b className="font-mono text-zinc-300">{fmtUsd(ticker24.low)}</b></span>
-            <span>Vol: <b className="font-mono text-zinc-300">{ticker24.vol >= 1_000_000 ? `$${(ticker24.vol / 1_000_000).toFixed(1)}M` : `$${Math.round(ticker24.vol / 1000)}K`}</b></span>
-          </div>
-        )}
-        <div className="grid gap-3 lg:grid-cols-[190px_1fr_270px]">
-          <div>
-            <p className="text-[11px] text-zinc-500 mb-1">Binance {t("paper.book")}</p>
-            {book.asks.length === 0 && book.bids.length === 0 ? (
-              <p className="text-[11px] text-zinc-600">-</p>
-            ) : (
-              <div className="font-mono text-[11px] space-y-px">
-                {book.asks.slice().reverse().map(([p, q], i) => (
-                  <button
-                    key={`a${i}`}
-                    onClick={() => { setLimitPrice(String(p)); setOrderType("limit"); }}
-                    className="w-full flex justify-between px-1.5 py-px rounded hover:bg-zinc-800 text-red-300/90"
-                  >
-                    <span>{fmtUsd(p)}</span><span className="text-zinc-600">{fmtQty(q)}</span>
-                  </button>
-                ))}
-                <div className="text-center text-zinc-500 py-0.5">
-                  {book.asks.length > 0 && book.bids.length > 0
-                    ? `⇅ ${fmtUsd(book.asks[book.asks.length - 1][0] - book.bids[0][0])}`
-                    : "·"}
-                </div>
-                {book.bids.map(([p, q], i) => (
-                  <button
-                    key={`b${i}`}
-                    onClick={() => { setLimitPrice(String(p)); setOrderType("limit"); }}
-                    className="w-full flex justify-between px-1.5 py-px rounded hover:bg-zinc-800 text-emerald-300/90"
-                  >
-                    <span>{fmtUsd(p)}</span><span className="text-zinc-600">{fmtQty(q)}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-            {tape.length > 0 && (
-              <div className="mt-2">
-                <p className="text-[11px] text-zinc-500 mb-1">{t("paper.tape")}</p>
-                <div className="font-mono text-[11px] space-y-px max-h-36 overflow-y-auto">
-                  {tape.map((x, i) => (
-                    <div key={`${x.t}-${i}`} className="flex justify-between px-1.5">
-                      <span className={x.sell ? "text-red-300/90" : "text-emerald-300/90"}>{fmtUsd(x.p)}</span>
-                      <span className="text-zinc-600">{fmtQty(x.q)}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-          <div className="min-w-0">
-            <div className="flex items-center gap-1.5 mb-1.5">
-              {(["15m", "1h", "4h", "1d"] as const).map(iv => (
-                <button key={iv} onClick={() => setChartTf(iv)} className={`px-2 py-0.5 rounded text-[11px] ${chartTf === iv ? "bg-amber-500/20 text-amber-300 font-bold" : "bg-zinc-800 text-zinc-500"}`}>{iv}</button>
-              ))}
-            </div>
-            <CandleChart
-              candles={candles}
-              height={240}
-              lines={(account?.pending ?? [])
-                .filter(o => o.coin === symbol.trim().toUpperCase())
-                .map(o => ({ value: o.limitUsd, color: o.side === "buy" ? "#34d399" : "#f87171", dash: "4 3", label: `${o.side} ${o.limitUsd}` }))}
-            />
-          </div>
-          <div className="rounded-lg bg-zinc-900/60 border border-zinc-800 p-3">
-            <div className="flex gap-1.5 mb-2">
-              {(["upbit", "binance"] as PaperVenue[]).map(v => (
-                <button key={v} onClick={() => setVenue(v)} className={`${selBtn(venue === v)} flex-1`}>{v}</button>
-              ))}
-            </div>
-            <div className="flex gap-1.5 mb-2">
-              {(["market", "limit"] as const).map(m => (
-                <button key={m} onClick={() => setOrderType(m)} className={selBtn(orderType === m)}>
-                  {m === "market" ? t("paper.market") : t("paper.limit")}
-                </button>
-              ))}
-              {(["buy", "sell"] as PaperSide[]).map(s => (
-                <button key={s} onClick={() => setSide(s)} className={selBtn(side === s)}>
-                  {s === "buy" ? t("paper.buy") : t("paper.sell")}
-                </button>
-              ))}
-            </div>
-            {orderType === "limit" && (
-              <label className="block text-[11px] text-zinc-500 mb-1.5">
-                {t("paper.price")}
-                <input
-                  value={limitPrice}
-                  onChange={e => setLimitPrice(e.target.value)}
-                  inputMode="decimal"
-                  placeholder={quote ? String(side === "buy" ? quote.bidUsd : quote.askUsd) : "-"}
-                  className="mt-0.5 w-full px-2.5 py-1.5 rounded-md text-xs bg-zinc-950 border border-zinc-700 font-mono"
-                />
-              </label>
-            )}
-            <label className="block text-[11px] text-zinc-500 mb-1.5">
-              {t("paper.qty")}
-              <input
-                value={qtyInput}
-                onChange={e => setQtyInput(e.target.value)}
-                inputMode="decimal"
-                className="mt-0.5 w-full px-2.5 py-1.5 rounded-md text-xs bg-zinc-950 border border-zinc-700 font-mono"
-              />
-            </label>
-            <div className="flex gap-1 mb-2">
-              {[25, 50, 75, 100].map(pct => (
-                <button
-                  key={pct}
-                  onClick={() => {
-                    const max = side === "buy" ? maxBuyQty : maxSellQty;
-                    if (max > 0) setQtyInput(String(max * pct / 100));
-                  }}
-                  className="flex-1 px-1 py-1 rounded text-[11px] bg-zinc-800 text-zinc-400 hover:bg-zinc-700"
-                >
-                  {pct === 100 ? "MAX" : `${pct}%`}
-                </button>
-              ))}
-            </div>
-            <p className="text-[11px] text-zinc-500 mb-2">
-              {t("paper.estimate")}: {fmtUsd(estGross)} + {t("paper.fee")} {fmtUsd(estFee)}
-            </p>
-            <div className="grid grid-cols-2 gap-1.5">
-              <button onClick={() => submit("buy")} className="py-2 rounded-md text-sm font-bold bg-emerald-600 text-white hover:bg-emerald-500">
-                {t("paper.buy")}
-              </button>
-              <button onClick={() => submit("sell")} className="py-2 rounded-md text-sm font-bold bg-red-600 text-white hover:bg-red-500">
-                {t("paper.sell")}
-              </button>
-            </div>
-            {msg && <p className="mt-1.5 text-[11px] text-amber-300">{msg}</p>}
-            {!quote && venue === "upbit" && symbol.trim() && <p className="mt-1.5 text-[11px] text-amber-300">{t("paper.onlyBinance")}</p>}
-            {account && account.pending.length > 0 && (
-              <div className="mt-2 pt-2 border-t border-zinc-800 space-y-1">
-                {account.pending
-                  .filter(o => o.coin === symbol.trim().toUpperCase())
-                  .map(o => (
-                    <div key={o.id} className="flex items-center gap-1.5 text-[11px] font-mono text-zinc-400">
-                      <span className={o.side === "buy" ? "text-emerald-400 font-bold" : "text-red-400 font-bold"}>
-                        {o.side === "buy" ? t("paper.buy") : t("paper.sell")}
-                      </span>
-                      <span>{fmtQty(o.qty)} @ {fmtUsd(o.limitUsd)}</span>
-                      <button onClick={() => cancelPending(o.id)} className="ml-auto text-zinc-600 hover:text-red-300">✕</button>
-                    </div>
-                  ))}
-              </div>
-            )}
-          </div>
-        </div>
-      </section>
-
-      <section className="rounded-xl border border-zinc-800 p-4">
-        <h2 className="text-sm font-semibold mb-3">⚖️ {t("paper.pair")}</h2>
-        <div className="flex flex-wrap items-center gap-1.5 mb-3">
-          <button onClick={() => setPairDir("u2b")} className={selBtn(pairDir === "u2b")}>
-            {t("paper.u2b")}
-          </button>
-          <button onClick={() => setPairDir("b2u")} className={selBtn(pairDir === "b2u")}>
-            {t("paper.b2u")}
-          </button>
-          <input
-            value={pairNotionalInput}
-            onChange={e => setPairNotionalInput(e.target.value)}
-            inputMode="decimal"
-            placeholder="USD"
-            className="px-2.5 py-1 rounded-md text-xs bg-zinc-900 border border-zinc-700 font-mono w-28"
-          />
-          <button onClick={submitPair} className="px-4 py-1 rounded-md text-xs font-bold bg-sky-600 text-white">
-            {t("paper.pairExecute")}
-          </button>
-        </div>
-        <p className="text-[11px] text-zinc-500">
-          {pairPreview ? (
-            <>
-              {t("paper.pairPreview")}: L {pairBuyQ!.venue} {fmtUsd(pairBuyQ!.askUsd)} / S {pairSellQ!.venue} {fmtUsd(pairSellQ!.bidUsd)}
-              {" · "}{t("paper.pairNet")}: <b className={pairPreview.net >= 0 ? "text-emerald-400" : "text-red-400"}>
-                {pairPreview.net >= 0 ? "+" : ""}{fmtUsd(pairPreview.net)}
-              </b>
-              <span className="ml-2 text-zinc-600">
-                {t("paper.pairPremium")}: {pairPreview.prem >= 0 ? "+" : ""}{pairPreview.prem.toFixed(2)}% · {t("paper.fee")} {fmtUsd(pairPreview.fees)}
-              </span>
-            </>
-          ) : (
-            <span>{t("paper.pairNeedInventory")}</span>
-          )}
-          {pairMsg && <span className="ml-2 text-amber-300">{pairMsg}</span>}
-        </p>
-      </section>
-
-      <section className="rounded-xl border border-zinc-800 p-4">
-        <h2 className="text-sm font-semibold mb-3">💸 {t("paper.funding")}</h2>
-        <div className="flex flex-wrap items-center gap-1.5 mb-3">
-          <select
-            value={fundBase ?? ""}
-            onChange={e => setFundBase(e.target.value || null)}
-            className="px-2.5 py-1 rounded-md text-xs bg-zinc-900 border border-zinc-700 font-mono"
-          >
-            <option value="">—</option>
-            {arbs.map(r => (
-              <option key={r.base} value={r.base}>
-                {r.base} {(r.spreadApr * 100).toFixed(0)}bp L:{r.longVenue} S:{r.shortVenue}
-              </option>
-            ))}
-          </select>
-          <input
-            value={fundNotional}
-            onChange={e => setFundNotional(e.target.value)}
-            inputMode="decimal"
-            placeholder="USD"
-            className="px-2.5 py-1 rounded-md text-xs bg-zinc-900 border border-zinc-700 font-mono w-28"
-          />
-          <button onClick={openFund} className="px-4 py-1 rounded-md text-xs font-bold bg-violet-600 text-white">
-            {t("paper.fundOpen")}
-          </button>
-        </div>
-        <p className="text-[11px] text-zinc-500 mb-2">
-          {t("paper.fundDesc")}
-          {fundMsg && <span className="ml-2 text-amber-300">{fundMsg}</span>}
-        </p>
-        {account.funding.length > 0 && (
-          <div className="overflow-x-auto rounded-lg border border-zinc-800">
-            <table className="w-full text-xs min-w-[680px]">
-              <thead>
-                <tr className="bg-zinc-900 text-zinc-400 text-left">
-                  <th className="px-3 py-2">{t("ta.coin")}</th>
-                  <th className="px-3 py-2">{t("paper.fundLegs")}</th>
-                  <th className="px-3 py-2 text-right">{t("paper.fundNotional")}</th>
-                  <th className="px-3 py-2 text-right">{t("paper.fundAcc")}</th>
-                  <th className="px-3 py-2 text-right">{t("paper.fundPricePnl")}</th>
-                  <th className="px-3 py-2 text-right">{t("paper.fundTotal")}</th>
-                  <th className="px-3 py-2"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {account.funding.map(f => {
-                  const row = arbs.find(r => r.base === f.base);
-                  const pricePnl = row && row.longMark !== null && row.shortMark !== null
-                    ? fundingPricePnl(f, row.longMark, row.shortMark) : 0;
-                  const total = f.accFundingUsd + pricePnl;
-                  return (
-                    <tr key={f.id} className="border-t border-zinc-800">
-                      <td className="px-3 py-2 font-bold">${f.base}</td>
-                      <td className="px-3 py-2 text-zinc-400">
-                        L <b className="text-emerald-300">{f.longVenue}</b> / S <b className="text-red-300">{f.shortVenue}</b>
-                      </td>
-                      <td className="px-3 py-2 text-right font-mono">{fmtUsd2(f.notionalUsd)}</td>
-                      <td className={`px-3 py-2 text-right font-mono ${f.accFundingUsd >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                        {f.accFundingUsd >= 0 ? "+" : ""}{fmtUsd2(f.accFundingUsd)}
-                      </td>
-                      <td className={`px-3 py-2 text-right font-mono ${pricePnl >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                        {pricePnl >= 0 ? "+" : ""}{fmtUsd2(pricePnl)}
-                      </td>
-                      <td className={`px-3 py-2 text-right font-mono font-bold ${total >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                        {total >= 0 ? "+" : ""}{fmtUsd2(total)}
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        <button
-                          onClick={() => closeFund(f.id)}
-                          className={`px-2 py-0.5 rounded text-zinc-300 ${armedFund === f.id ? "bg-red-700 hover:bg-red-600" : "bg-zinc-800 hover:bg-zinc-700"}`}
-                        >
-                          {armedFund === f.id ? t("paper.forceClose") : t("paper.close")}
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-
       <section>
-        <h2 className="text-sm font-semibold mb-2">📦 {t("paper.positions")} ({account.positions.length})</h2>
-        {posMsg && <p className="text-[11px] text-amber-300 mb-2">{posMsg}</p>}        {account.positions.length === 0 ? (
+        <h2 className="text-sm font-semibold mb-2">
+          📦 {t("paper.positions")} ({account.positions.length + account.funding.length})
+        </h2>
+        {posMsg && <p className="text-[11px] text-amber-300 mb-2">{posMsg}</p>}
+        {fundMsg && <p className="text-[11px] text-amber-300 mb-2">{fundMsg}</p>}
+        {account.positions.length === 0 && account.funding.length === 0 ? (
           <p className="text-xs text-zinc-500">{t("paper.noPositions")}</p>
         ) : (
           <div className="overflow-x-auto rounded-lg border border-zinc-800">
-            <table className="w-full text-xs min-w-[760px]">
+            <table className="w-full text-xs min-w-[840px]">
               <thead>
                 <tr className="bg-zinc-900 text-zinc-400 text-left">
-                  <th className="px-3 py-2">{t("paper.venue")}</th>
+                  <th className="px-3 py-2">{t("paper.legs")}</th>
                   <th className="px-3 py-2">{t("ta.coin")}</th>
                   <th className="px-3 py-2 text-right">{t("paper.qty")}</th>
                   <th className="px-3 py-2 text-right">{t("paper.avg")}</th>
@@ -1095,7 +585,7 @@ export default function PaperView() {
                   const m = mark(p.venue, p.coin);
                   const upnl = m !== null ? (m - p.avgPriceUsd) * p.qty : 0;
                   return (
-                    <tr key={`${p.venue}:${p.coin}`} className="border-t border-zinc-800">
+                    <tr key={`spot:${p.venue}:${p.coin}`} className="border-t border-zinc-800">
                       <td className="px-3 py-2 text-zinc-400">{p.venue}</td>
                       <td className="px-3 py-2 font-bold">${p.coin}</td>
                       <td className="px-3 py-2 text-right font-mono">{fmtQty(p.qty)}</td>
@@ -1128,6 +618,43 @@ export default function PaperView() {
                           className={`px-2 py-0.5 rounded text-zinc-300 ${armed === `${p.venue}:${p.coin.toUpperCase()}` ? "bg-red-700 hover:bg-red-600" : "bg-zinc-800 hover:bg-zinc-700"}`}
                         >
                           {armed === `${p.venue}:${p.coin.toUpperCase()}` ? t("paper.forceClose") : t("paper.close")}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {account.funding.map(f => {
+                  const row = arbs.find(r => r.base === f.base);
+                  const pricePnl = row && row.longMark !== null && row.shortMark !== null
+                    ? fundingPricePnl(f, row.longMark, row.shortMark) : 0;
+                  const total = f.accFundingUsd + pricePnl;
+                  return (
+                    <tr key={`fund:${f.id}`} className="border-t border-violet-900/40 bg-violet-950/10">
+                      <td className="px-3 py-2 text-zinc-400 whitespace-nowrap">
+                        L <b className="text-emerald-300">{f.longVenue}</b> / S <b className="text-red-300">{f.shortVenue}</b>
+                      </td>
+                      <td className="px-3 py-2 font-bold">⚡${f.base}</td>
+                      <td className="px-3 py-2 text-right font-mono">{fmtUsd2(f.notionalUsd)}</td>
+                      <td className="px-3 py-2 text-right font-mono text-zinc-400">
+                        {fmtUsd(f.entryLongMark)} / {fmtUsd(f.entryShortMark)}
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono text-zinc-400">
+                        {row && row.longMark !== null ? fmtUsd(row.longMark) : "-"} / {row && row.shortMark !== null ? fmtUsd(row.shortMark) : "-"}
+                      </td>
+                      <td className={`px-3 py-2 text-right font-mono font-bold ${total >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                        {total >= 0 ? "+" : ""}{fmtUsd(total)}
+                      </td>
+                      <td className="px-1 py-2 text-center text-zinc-600" colSpan={2}>
+                        <span className="text-[10px]" title={t("paper.fundAcc")}>
+                          {t("paper.fundAcc")}: <b className={f.accFundingUsd >= 0 ? "text-emerald-400" : "text-red-400"}>{f.accFundingUsd >= 0 ? "+" : ""}{fmtUsd2(f.accFundingUsd)}</b>
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <button
+                          onClick={() => closeFund(f.id)}
+                          className={`px-2 py-0.5 rounded text-zinc-300 ${armedFund === f.id ? "bg-red-700 hover:bg-red-600" : "bg-zinc-800 hover:bg-zinc-700"}`}
+                        >
+                          {armedFund === f.id ? t("paper.forceClose") : t("paper.close")}
                         </button>
                       </td>
                     </tr>
@@ -1183,25 +710,7 @@ export default function PaperView() {
         )}
       </section>
 
-      <section>
-        <h2 className="text-sm font-semibold mb-2">🧾 {t("paper.fills")} ({account.fills.length})</h2>
-        {account.fills.length === 0 ? (
-          <p className="text-xs text-zinc-500">{t("paper.noFills")}</p>
-        ) : (
-          <div className="space-y-1 max-h-72 overflow-y-auto">
-            {account.fills.slice(0, 50).map(f => (
-              <div key={f.id} className="flex items-center gap-2 text-[11px] font-mono text-zinc-400">
-                <span className={f.side === "buy" ? "text-emerald-400 font-bold" : "text-red-400 font-bold"}>
-                  {f.side === "buy" ? t("paper.buy") : t("paper.sell")}
-                </span>
-                <span>{f.venue}</span>
-                <span className="text-zinc-200 font-bold">${f.coin}</span>
-                <span>{fmtQty(f.qty)} @ {fmtUsd(f.priceUsd)}</span>
-                <span className="ml-auto text-zinc-600">{new Date(f.ts).toLocaleString(lang === "ko" ? "ko-KR" : "en-US", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
-              </div>
-            ))}
-          </div>
-        )}
+      <section className="flex justify-end">
         <button
           onClick={() => {
             if (!confirmReset) { setConfirmReset(true); return; }
@@ -1212,7 +721,7 @@ export default function PaperView() {
             setConfirmReset(false);
           }}
           onBlur={() => setConfirmReset(false)}
-          className="mt-3 px-3 py-1 rounded-md text-xs border border-zinc-700 text-zinc-500 hover:text-red-300 hover:border-red-800"
+          className="px-3 py-1 rounded-md text-xs border border-zinc-700 text-zinc-500 hover:text-red-300 hover:border-red-800"
         >
           {confirmReset ? t("paper.confirmReset") : t("paper.reset")}
         </button>
