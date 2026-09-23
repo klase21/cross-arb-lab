@@ -537,26 +537,6 @@ export default function PaperView() {
             </span>
           </span>
         </div>
-        {(() => {
-          const autoFills = (account?.fills ?? []).filter(f => f.note?.startsWith("auto")).slice(0, 6);
-          if (autoFills.length === 0) return null;
-          return (
-            <div className="mt-2 pt-2 border-t border-zinc-800 space-y-1">
-              {autoFills.map(f => (
-                <div key={f.id} className="flex items-center gap-2 text-[11px] font-mono text-zinc-400">
-                  <span className="text-sky-300">🤖</span>
-                  <span className={f.side === "buy" ? "text-emerald-400 font-bold" : "text-red-400 font-bold"}>
-                    {f.side === "buy" ? t("paper.buy") : t("paper.sell")}
-                  </span>
-                  <span>{f.venue}</span>
-                  <span className="text-zinc-200 font-bold">${f.coin}</span>
-                  <span>{fmtQty(f.qty)} @ {fmtUsd2(f.priceUsd)}</span>
-                  <span className="ml-auto text-zinc-600">{new Date(f.ts).toLocaleTimeString(lang === "ko" ? "ko-KR" : "en-US")}</span>
-                </div>
-              ))}
-            </div>
-          );
-        })()}
         <div className="mt-3 pt-3 border-t border-zinc-800">
           <div className="flex items-center gap-1.5 mb-2 flex-wrap">
             <span className="text-[11px] text-zinc-500">{t("paper.preset")}:</span>
