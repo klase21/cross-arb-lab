@@ -37,6 +37,32 @@ export interface AutoConfig {
 
 const CONFIG_KEY = "paperAutoConfig";
 const COOLDOWN_KEY = "paperAutoCooldown";
+const STATUS_KEY = "paperAutoStatus";
+
+export interface AutoStatus {
+  lastTick: number | null;
+  cycles: number;
+  spotFills: number;
+  fundOpens: number;
+  fundCloses: number;
+}
+
+export function loadAutoStatus(): AutoStatus {
+  const empty: AutoStatus = { lastTick: null, cycles: 0, spotFills: 0, fundOpens: 0, fundCloses: 0 };
+  if (typeof window === "undefined") return empty;
+  try {
+    const raw = localStorage.getItem(STATUS_KEY);
+    if (raw) return { ...empty, ...JSON.parse(raw) };
+  } catch {}
+  return empty;
+}
+
+export function saveAutoStatus(s: AutoStatus): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(STATUS_KEY, JSON.stringify(s));
+  } catch {}
+}
 
 export const DEFAULT_AUTO_CONFIG: AutoConfig = {
   enabled: false,

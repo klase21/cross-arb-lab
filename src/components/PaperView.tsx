@@ -35,8 +35,10 @@ import {
 import {
   DEFAULT_AUTO_CONFIG,
   loadAutoConfig,
+  loadAutoStatus,
   saveAutoConfig,
   type AutoConfig,
+  type AutoStatus,
 } from "@/lib/auto";
 import { fmtQty, fmtUsd2 } from "@/lib/format";
 import CandleChart from "@/components/CandleChart";
@@ -116,12 +118,26 @@ export default function PaperView() {
   const [fundNotional, setFundNotional] = useState("1000");
   const [fundMsg, setFundMsg] = useState<string | null>(null);
   const [autoCfg, setAutoCfgState] = useState<AutoConfig>(DEFAULT_AUTO_CONFIG);
+  const [autoStatus, setAutoStatus] = useState<AutoStatus>({ lastTick: null, cycles: 0, spotFills: 0, fundOpens: 0, fundCloses: 0 });
   const [equity, setEquity] = useState<EquityPoint[]>([]);
 
   useEffect(() => {
     const kickoff = setTimeout(() => {
       setAccount(loadAccount());
-      setAutoCfgState(loadAutoConfig());
+      const cfg = loadAutoConfig();
+      // ?size=500 style deep link: one capital size for every notional.
+      try {
+        const sizeParam = Number.parseFloat(new URLSearchParams(window.location.search).get("size") ?? "");
+        if (Number.isFinite(sizeParam) && sizeParam > 0) {
+          cfg.spotNotionalUsd = sizeParam;
+          cfg.fundingNotionalUsd = sizeParam;
+          saveAutoConfig(cfg);
+          setPairNotionalInput(String(sizeParam));
+          setFundNotional(String(sizeParam));
+        }
+      } catch {}
+      setAutoCfgState(cfg);
+      setAutoStatus(loadAutoStatus());
       setEquity(loadEquity());
       const draft = consumeDraft();
       if (draft) setSymbol(draft.toUpperCase());
@@ -409,6 +425,11 @@ export default function PaperView() {
     return ask > 0 ? ask : null;
   }, [byCoin, fx, extMap]);
 
+  useEffect(() => {
+    const timer = setInterval(() => setAutoStatus(loadAutoStatus()), 15000);
+    return () => clearInterval(timer);
+  }, []);
+
   const valuation = useMemo(() => (account ? valuate(account, mark, fundMark) : null), [account, mark, fundMark]);
 
   // TP/SL attachments checked on the same refresh cadence.
@@ -687,6 +708,65 @@ export default function PaperView() {
           {equityChart}
         </section>
       )}
+
+      <section className={`rounded-xl border p-4 ${autoCfg.enabled ? "border-emerald-800 bg-emerald-950/20" : "border-zinc-800"}`}>
+        <div className="flex items-center gap-3 flex-wrap">
+          <h2 className="text-sm font-semibold">🤖 {t("paper.autoHero")}</h2>
+          <button
+            onClick={() => setAuto({ enabled: !autoCfg.enabled })}
+            className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${autoCfg.enabled ? "bg-emerald-600" : "bg-zinc-700"}`}
+          >
+            <span className={`inline-block h-4 w-4 rounded-full bg-white transition-transform ${autoCfg.enabled ? "translate-x-[22px]" : "translate-x-1"}`} />
+          </button>
+          <span className={`text-xs font-bold ${autoCfg.enabled ? "text-emerald-300" : "text-zinc-500"}`}>
+            {autoCfg.enabled ? `● ${t("paper.running")}` : `○ ${t("paper.stopped")}`}
+          </span>
+          <label className="flex items-center gap-1.5 text-xs text-zinc-400">
+            $/건
+            <input
+              value={autoCfg.spotNotionalUsd}
+              onChange={e => {
+                const v = Number.parseFloat(e.target.value);
+                if (Number.isFinite(v) && v > 0) {
+                  setAuto({ spotNotionalUsd: v, fundingNotionalUsd: v });
+                  setPairNotionalInput(String(v));
+                  setFundNotional(String(v));
+                }
+              }}
+              inputMode="decimal"
+              className="w-24 px-2 py-1 rounded-md bg-zinc-900 border border-zinc-700 font-mono"
+            />
+          </label>
+          <span className="ml-auto text-[11px] text-zinc-500">
+            {autoStatus.lastTick
+              ? `${t("paper.lastScan")}: ${new Date(autoStatus.lastTick).toLocaleTimeString(lang === "ko" ? "ko-KR" : "en-US")} · ${autoStatus.cycles}${t("paper.cycles")}`
+              : t("paper.notRunYet")}
+            <span className="ml-2">
+              {t("paper.autoFillsCount")}: {autoStatus.spotFills} · {t("paper.funding")}: {autoStatus.fundOpens}/{autoStatus.fundCloses}
+            </span>
+          </span>
+        </div>
+        {(() => {
+          const autoFills = (account?.fills ?? []).filter(f => f.note?.startsWith("auto")).slice(0, 6);
+          if (autoFills.length === 0) return null;
+          return (
+            <div className="mt-2 pt-2 border-t border-zinc-800 space-y-1">
+              {autoFills.map(f => (
+                <div key={f.id} className="flex items-center gap-2 text-[11px] font-mono text-zinc-400">
+                  <span className="text-sky-300">🤖</span>
+                  <span className={f.side === "buy" ? "text-emerald-400 font-bold" : "text-red-400 font-bold"}>
+                    {f.side === "buy" ? t("paper.buy") : t("paper.sell")}
+                  </span>
+                  <span>{f.venue}</span>
+                  <span className="text-zinc-200 font-bold">${f.coin}</span>
+                  <span>{fmtQty(f.qty)} @ {fmtUsd2(f.priceUsd)}</span>
+                  <span className="ml-auto text-zinc-600">{new Date(f.ts).toLocaleTimeString(lang === "ko" ? "ko-KR" : "en-US")}</span>
+                </div>
+              ))}
+            </div>
+          );
+        })()}
+      </section>
 
       <section className="rounded-xl border border-zinc-800 p-4">
         <h2 className="text-sm font-semibold mb-3">🎫 {t("paper.ticket")}</h2>

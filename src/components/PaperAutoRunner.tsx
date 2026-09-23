@@ -4,10 +4,12 @@ import { useEffect, useRef } from "react";
 import {
   isCooledDown,
   loadAutoConfig,
+  loadAutoStatus,
   markTraded,
   pickFunding,
   pickFundingExits,
   pickSpot,
+  saveAutoStatus,
   type FundingOpportunity,
   type SpotOpportunity,
 } from "@/lib/auto";
@@ -40,6 +42,8 @@ export default function PaperAutoRunner() {
       const account = loadAccount();
       if (!account) return;
       running.current = true;
+      const status = loadAutoStatus();
+      status.cycles += 1;
       try {
         // --- spot legs from kimchi ---
         try {
@@ -92,6 +96,7 @@ export default function PaperAutoRunner() {
               );
               if (!("error" in result)) {
                 acc = result.account;
+                status.spotFills += 2;
                 markTraded(`spot:${o.coin}`);
                 notifyBrowser(
                   `Auto PAPER ${o.coin}`,
@@ -157,6 +162,7 @@ export default function PaperAutoRunner() {
                 }, Date.now());
                 if (!("error" in closed)) {
                   acc = closed.account;
+                  status.fundCloses += 1;
                   notifyBrowser(`Auto PAPER close ${base}`, `funding PnL ${closed.closed.pnlUsd >= 0 ? "+" : ""}${closed.closed.pnlUsd.toFixed(2)}`, `auto-fund-${base}`);
                 }
               }
@@ -172,6 +178,7 @@ export default function PaperAutoRunner() {
               });
               if (!("error" in opened)) {
                 acc = opened.account;
+                status.fundOpens += 1;
                 markTraded(`fund:${o.base}`);
                 notifyBrowser(`Auto PAPER fund ${o.base}`, `L ${o.longVenue} / S ${o.shortVenue} ${o.spreadApr.toFixed(0)}% APR`, `auto-fund-${o.base}`);
               }
@@ -184,6 +191,8 @@ export default function PaperAutoRunner() {
           }
         } catch {}
       } finally {
+        status.lastTick = Date.now();
+        try { saveAutoStatus(status); } catch {}
         running.current = false;
       }
     };
