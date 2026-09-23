@@ -21,9 +21,8 @@ function Section({ titleKey, children }: { titleKey: string; children: ReactNode
 export default function ArbitrageView() {
   return (
     <div>
-      <Section titleKey="tab.kimchi.title">
-        <KimchiView />
-      </Section>
+      {/* Heading removed: the unified table covers kimchi + withdraw + inventory. */}
+      <KimchiView />
       {/* Unmounted 2026-09: merged into the kimchi table above.
       <Section titleKey="tab.arbitrage.title">
         <DexArbitrageView />
