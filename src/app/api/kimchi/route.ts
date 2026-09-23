@@ -5,8 +5,7 @@ import { evaluateUpbitUsdtRoundTrips } from "@/lib/stablecoin-arbitrage";
 
 export const dynamic = "force-dynamic";
 
-export interface KimchiItem {
-  coin: string;            // Upbit ticker
+export interface KimchiItem {  coin: string;            // Upbit ticker
   nameKr: string;
   nameEn: string;
   binanceSymbol?: string;  // ticker actually used on Binance (may differ)
@@ -24,6 +23,7 @@ export interface KimchiItem {
   verified: boolean;       // true when CMC agrees with Binance within 5%
   walletStatus?: string;   // reference to wallet status page
   volumeKrw?: number;      // Upbit 24h acc_trade_price_24h (KRW) — liquidity proxy
+  marketCapUsd?: number;   // CMC (or Coingecko fallback) market cap, USD
   trip?: {
     netProfitKrw: number;
     netProfitPct: number;
@@ -34,11 +34,13 @@ export interface KimchiItem {
   };
 }
 
+export interface CmcEntry { price: number; id: number; mcap?: number }
+
 const MARKET_NAMES_TTL_MS = 24 * 60 * 60 * 1000;
 let marketNamesCache: { at: number; names: Map<string, { ko: string; en: string }> } | null = null;
 
 const CMC_TTL_MS = 10 * 60 * 1000;
-let cmcCache: { at: number; entries: Map<string, { price: number; id: number }> } | null = null;
+let cmcCache: { at: number; entries: Map<string, { price: number; id: number; mcap?: number }> } | null = null;
 let cmcCandidatesCache: { at: number; candidates: Map<string, { price: number; id: number }[]> } | null = null;
 
 // All same-symbol CMC candidates (up to 5, mcap desc) — used to resolve the
@@ -92,24 +94,26 @@ const CMC_HEADERS = {
 };
 const CMC_LISTING_URL = "https://api.coinmarketcap.com/data-api/v3/cryptocurrency/listing?start=1&limit=5000&sortBy=market_cap&sortType=desc&convert=USD&cryptoType=all&tagType=all&audited=false";
 
-async function getCmcEntries(): Promise<Map<string, { price: number; id: number }>> {
+async function getCmcEntries(): Promise<Map<string, { price: number; id: number; mcap?: number }>> {
   if (cmcCache && Date.now() - cmcCache.at < CMC_TTL_MS) return cmcCache.entries;
   try {
     const response = await fetch(CMC_LISTING_URL, { headers: CMC_HEADERS, signal: AbortSignal.timeout(12_000) });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const data = await response.json() as { data?: { cryptoCurrencyList?: { id: number; symbol: string; quotes?: { name: string; price: number }[] }[] } };
+    const data = await response.json() as { data?: { cryptoCurrencyList?: { id: number; symbol: string; quotes?: { name: string; price: number; marketCap?: number }[] }[] } };
     const list = data.data?.cryptoCurrencyList;
     if (!Array.isArray(list)) throw new Error("unexpected CMC shape");
-    const entries = new Map<string, { price: number; id: number }>();
-    const candidates = new Map<string, { price: number; id: number }[]>();
+    const entries = new Map<string, CmcEntry>();
+    const candidates = new Map<string, CmcEntry[]>();
     for (const row of list) {
       // Listing is sorted by market cap desc — first occurrence per symbol wins
-      const price = row.quotes?.find(quote => quote.name === "USD")?.price;
+      const usdQuote = row.quotes?.find(quote => quote.name === "USD");
+      const price = usdQuote?.price;
       if (typeof price !== "number" || price <= 0) continue;
+      const mcap = typeof usdQuote?.marketCap === "number" && usdQuote.marketCap > 0 ? usdQuote.marketCap : undefined;
       const bucket = candidates.get(row.symbol) ?? [];
-      if (bucket.length < 5) bucket.push({ price, id: row.id });
+      if (bucket.length < 5) bucket.push({ price, id: row.id, mcap });
       candidates.set(row.symbol, bucket);
-      if (!entries.has(row.symbol)) entries.set(row.symbol, { price, id: row.id });
+      if (!entries.has(row.symbol)) entries.set(row.symbol, { price, id: row.id, mcap });
     }
     if (entries.size === 0) throw new Error("empty CMC list");
     cmcCache = { at: Date.now(), entries };
@@ -128,12 +132,12 @@ async function getCmcEntries(): Promise<Map<string, { price: number; id: number 
 
 // Coingecko fallback — used only when CoinMarketCap is unreachable.
 // Free API allows ~30 calls/min; 8 pages × 250 coins covers the top 2000.
-let geckoCache: { at: number; entries: Map<string, { price: number; id: number }> } | null = null;
+let geckoCache: { at: number; entries: Map<string, { price: number; id: number; mcap?: number }> } | null = null;
 const GECKO_TTL_MS = 10 * 60 * 1000;
 
-async function getCoingeckoEntries(): Promise<Map<string, { price: number; id: number }>> {
+async function getCoingeckoEntries(): Promise<Map<string, { price: number; id: number; mcap?: number }>> {
   if (geckoCache && Date.now() - geckoCache.at < GECKO_TTL_MS) return geckoCache.entries;
-  const entries = new Map<string, { price: number; id: number }>();
+  const entries = new Map<string, { price: number; id: number; mcap?: number }>();
   const PAGES = 8;
   for (let page = 1; page <= PAGES; page++) {
     try {
@@ -142,13 +146,19 @@ async function getCoingeckoEntries(): Promise<Map<string, { price: number; id: n
         { headers: { accept: "application/json", "user-agent": "Mozilla/5.0" }, signal: AbortSignal.timeout(10_000) },
       );
       if (!response.ok) break;
-      const list = await response.json() as { id: string; symbol: string; current_price: number }[];
+      const list = await response.json() as { id: string; symbol: string; current_price: number; market_cap?: number }[];
       if (!Array.isArray(list) || list.length === 0) break;
       for (const row of list) {
         const symbol = row.symbol.toUpperCase();
         // Sorted by market cap desc — first occurrence per symbol wins
         if (entries.has(symbol)) continue;
-        if (typeof row.current_price === "number" && row.current_price > 0) entries.set(symbol, { price: row.current_price, id: 0 });
+        if (typeof row.current_price === "number" && row.current_price > 0) {
+          entries.set(symbol, {
+            price: row.current_price,
+            id: 0,
+            mcap: typeof row.market_cap === "number" && row.market_cap > 0 ? row.market_cap : undefined,
+          });
+        }
       }
     } catch {
       break;
@@ -175,7 +185,7 @@ const PAIRS_BATCH = 30;
 
 async function fetchCmcMarketPairsFor(
   coins: string[],
-  cmcEntries: Map<string, { price: number; id: number }>,
+  cmcEntries: Map<string, { price: number; id: number; mcap?: number }>,
 ): Promise<Map<string, { exchangeName?: string; baseSymbol?: string; quoteSymbol?: string; price?: number }[]>> {
   const map = pairsCache && Date.now() - pairsCache.at < PAIRS_TTL_MS ? new Map(pairsCache.map) : new Map();
   const unresolved = coins.filter(coin => !map.has(coin) && cmcEntries.has(coin)).slice(0, PAIRS_BATCH);
@@ -230,7 +240,7 @@ async function fetchPairsByIds(ids: number[]): Promise<Map<number, CmcPair[]>> {
  * regular spot ticker API does not cover. Resolved lazily in small batches
  * and cached for a day.
  */
-async function resolveBinanceAliases(coins: string[], cmcEntries: Map<string, { price: number; id: number }>): Promise<Map<string, AliasResolution>> {
+async function resolveBinanceAliases(coins: string[], cmcEntries: Map<string, { price: number; id: number; mcap?: number }>): Promise<Map<string, AliasResolution>> {
   const map = aliasCache && Date.now() - aliasCache.at < ALIAS_TTL_MS ? new Map(aliasCache.map) : new Map<string, AliasResolution>();
   const unresolved = coins.filter(coin => !map.has(coin) && cmcEntries.has(coin)).slice(0, ALIAS_RESOLVE_BATCH);
 
@@ -706,7 +716,7 @@ function buildItem(
   upbitKrw: number,
   globalUsd: number,
   fxRate: number,
-  cmcEntries: Map<string, { price: number; id: number }>,
+  cmcEntries: Map<string, { price: number; id: number; mcap?: number }>,
   volumeKrw?: number,
 ): KimchiItem {
   const upbitUsd = upbitKrw / fxRate;
@@ -726,6 +736,7 @@ function buildItem(
     verified: binanceDevPct !== undefined && binanceDevPct <= 5,
     walletStatus: "https://www.upbit.com/service_center/wallet_status",
     volumeKrw,
+    marketCapUsd: cmcEntry?.mcap,
   };
 }
 
@@ -740,7 +751,7 @@ function buildItemWithOrderbook(
   globalBid: number,
   premiumPct: number,
   fxRate: number,
-  cmcEntries: Map<string, { price: number; id: number }>,
+  cmcEntries: Map<string, { price: number; id: number; mcap?: number }>,
   volumeKrw?: number,
 ): KimchiItem {
   const cmcEntry = cmcEntries.get(coin);
@@ -763,6 +774,7 @@ function buildItemWithOrderbook(
     verified: binanceDevPct !== undefined && binanceDevPct <= 5,
     walletStatus: "https://www.upbit.com/service_center/wallet_status",
     volumeKrw,
+    marketCapUsd: cmcEntry?.mcap,
   };
 }
 

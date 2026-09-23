@@ -22,11 +22,11 @@ interface KimchiItem {
   globalUsd: number;
   globalAsk?: number;
   globalBid?: number;
-  premiumPct: number;
-  cmcUsd?: number;
+  premiumPct: number;  cmcUsd?: number;
   binanceDevPct?: number;
   verified: boolean;
   volumeKrw?: number;
+  marketCapUsd?: number;
   walletStatus?: string;
   trip?: {
     netProfitKrw: number;
@@ -111,6 +111,7 @@ export default function KimchiView() {
   const [sortKey, setSortKey] = useState<SortKey>("opportunity");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [minVolume, setMinVolume] = useState(0);
+  const [mcapFilter, setMcapFilter] = useState(0); // 0=all, >0=min USD, -1=small-cap (<$1B)
   const [history, setHistory] = useState<Record<string, { time: number; premium: number }[]>>({});
   // Shared DB history (Neon, identical on every browser) — preferred over local
   // accumulation when a coin has >= 2 points; localStorage stays as fallback.
@@ -385,7 +386,7 @@ export default function KimchiView() {
   };
 
   const exportCsv = () => {
-    const headers = ["Coin", "Name", "Upbit_KRW_Bid", "Global_USD_Ask", "Premium_Pct", "CMC_Dev_Pct", "Volume_KRW_24h", "RoundTrip_KRW", "RoundTrip_Pct", "Inventory_Net_Pct", "Inventory_Depth_Net_Pct", "Inventory_Fillable_1M", "Inventory_Buy", "Inventory_Sell", "Risk_Total", "Risk_Grade"];
+    const headers = ["Coin", "Name", "Upbit_KRW_Bid", "Global_USD_Ask", "Premium_Pct", "CMC_Dev_Pct", "Volume_KRW_24h", "MarketCap_USD", "RoundTrip_KRW", "RoundTrip_Pct", "Inventory_Net_Pct", "Inventory_Depth_Net_Pct", "Inventory_Fillable_1M", "Inventory_Buy", "Inventory_Sell", "Risk_Total", "Risk_Grade"];
     const rows = filtered.map(item => {
       const r = getKimchiRisk(item);
       const inv = cexMap.get(item.coin);
@@ -397,6 +398,7 @@ export default function KimchiView() {
         item.premiumPct.toFixed(2),
         item.binanceDevPct?.toFixed(1) ?? "",
         item.volumeKrw ? Math.round(item.volumeKrw).toString() : "",
+        item.marketCapUsd ? Math.round(item.marketCapUsd).toString() : "",
         item.trip ? Math.round(item.trip.netProfitKrw).toString() : "",
         item.trip ? item.trip.netProfitPct.toFixed(2) : "",
         inv ? inv.net.toFixed(2) : "",
@@ -436,6 +438,11 @@ export default function KimchiView() {
         if (reverseOnly && item.premiumPct > -0.5) return false;
         if (hideAlpha && item.binanceSource !== undefined && item.binanceSource !== "spot") return false;
         if (minVolume > 0 && (item.volumeKrw ?? 0) < minVolume) return false;
+        if (mcapFilter !== 0) {
+          const mcap = item.marketCapUsd ?? 0;
+          if (mcapFilter === -1) { if (mcap >= 1_000_000_000) return false; }
+          else if (mcap < mcapFilter) return false;
+        }
         // Hide paused / withdraw_only (입출금 제한) — as requested
         const w = walletMap.get(item.coin);
         if (w) {
@@ -458,7 +465,7 @@ export default function KimchiView() {
         if (Number.isNaN(diff)) return 0;
         return sortDir === "desc" ? diff : -diff;
       });
-  }, [items, search, verifiedOnly, reverseOnly, hideAlpha, favorites, sortKey, sortDir, walletMap, mergedHistory, topMovers, cexMap]);
+  }, [items, search, verifiedOnly, reverseOnly, hideAlpha, favorites, sortKey, sortDir, walletMap, mergedHistory, topMovers, cexMap, mcapFilter]);
 
   return (
     <>
@@ -494,6 +501,13 @@ export default function KimchiView() {
             <option value={100_000_000}>{t("kimchi.filter.volume100m")}</option>
             <option value={1_000_000_000}>{t("kimchi.filter.volume1b")}</option>
             <option value={10_000_000_000}>{t("kimchi.filter.volume10b")}</option>
+          </select>
+          <select value={mcapFilter} onChange={event => setMcapFilter(Number(event.target.value))} className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs text-zinc-400 outline-none" title={lang === "ko" ? "시가총액 기준 필터" : "Filter by market cap"}>
+            <option value={0}>{lang === "ko" ? "전체 시총" : "All mcap"}</option>
+            <option value={10_000_000_000}>{lang === "ko" ? "대형주 $10B+" : "Large $10B+"}</option>
+            <option value={1_000_000_000}>{lang === "ko" ? "중형주+ $1B+" : "Mid+ $1B+"}</option>
+            <option value={100_000_000}>{lang === "ko" ? "$100M+" : "$100M+"}</option>
+            <option value={-1}>{lang === "ko" ? "소형주 $1B 미만" : "Small <$1B"}</option>
           </select>
           <label className="flex items-center gap-2 text-xs cursor-pointer select-none" title={lang === "ko" ? "업비트가 글로벌보다 -0.5% 이상 싼 역프리미엄 코인만 — 저가 매수 스캔" : "Only coins where Upbit trades ≥0.5% below global — discount scanner"}>
             <button
@@ -654,6 +668,11 @@ export default function KimchiView() {
                         ? (item.volumeKrw >= 1_000_000_000 ? `${(item.volumeKrw / 1_000_000_000).toFixed(1)}B` : `${(item.volumeKrw / 100_000_000).toFixed(1)}억`)
                         : (item.volumeKrw >= 1_000_000_000 ? `${(item.volumeKrw / 1_000_000_000).toFixed(1)}B` : `${(item.volumeKrw / 1_000_000).toFixed(0)}M`)
                     ) : "-"}
+                    {item.marketCapUsd ? (
+                      <div className="text-[10px] text-zinc-600" title={lang === "ko" ? `시총 $${Math.round(item.marketCapUsd).toLocaleString()}` : `Mcap $${Math.round(item.marketCapUsd).toLocaleString()}`}>
+                        ${item.marketCapUsd >= 1_000_000_000 ? `${(item.marketCapUsd / 1_000_000_000).toFixed(1)}B` : `${(item.marketCapUsd / 1_000_000).toFixed(0)}M`}
+                      </div>
+                    ) : null}
                   </td>
                   <td className="text-center px-2 py-2.5">
                     <Sparkline data={(mergedHistory[item.coin] ?? []).map(point => point.premium)} zScore={computeZScore(mergedHistory[item.coin])} />
