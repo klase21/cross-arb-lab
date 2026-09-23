@@ -58,9 +58,10 @@ export async function GET(req: Request) {
     const rows: { coin: string; type: "kimchi" | "inventory"; net: number }[] = [];
 
     // Inventory: same quote-based logic as the UI column (net > 0.1%), best per coin.
+    // Gross > 25% is a stale quote, not signal (same guard as the backfill script).
     const seen = new Set<string>();
     for (const opp of findCexOpportunities(prices)) {
-      if (seen.has(opp.coin)) continue;
+      if (seen.has(opp.coin) || opp.spreadPct > 25) continue;
       seen.add(opp.coin);
       rows.push({ coin: opp.coin, type: "inventory", net: opp.netSpreadPct });
     }
@@ -70,7 +71,7 @@ export async function GET(req: Request) {
       const bin = ex.binance ?? 0;
       if (!(up > 0 && bin > 0)) continue;
       const premium = ((up - bin) / bin) * 100;
-      if (premium > KIMCHI_PREMIUM_CUT) {
+      if (premium > KIMCHI_PREMIUM_CUT && premium <= 25) {
         rows.push({ coin, type: "kimchi", net: premium });
       }
     }

@@ -276,7 +276,7 @@ function KimchiDetailInner({ params }: { params: Promise<{ coin: string }> }) {
             <h2 className="text-base font-semibold mb-1">{lang === "ko" ? "1년 기회 통계" : "1-Year Opportunity Stats"}</h2>
             <p className="text-[11px] text-zinc-500 mb-3">
               {lang === "ko"
-                ? `10분마다 관측 집계 · 김치(프리미엄 1%↑) ${arbStats.summary.kimchiHits.toLocaleString()}회(최고 +${arbStats.summary.kimchiBest.toFixed(2)}%) · 보유(순수익) ${arbStats.summary.invHits.toLocaleString()}회(최고 +${arbStats.summary.invBest.toFixed(2)}%) · 기회 있던 날 ${arbStats.summary.activeDays}일`
+                ? `기간 내 관측 집계(과거 시간봉+실시간 스캔) · 김치(프리미엄 1%↑) ${arbStats.summary.kimchiHits.toLocaleString()}회(최고 +${arbStats.summary.kimchiBest.toFixed(2)}%) · 보유(순수익) ${arbStats.summary.invHits.toLocaleString()}회(최고 +${arbStats.summary.invBest.toFixed(2)}%) · 기회 있던 날 ${arbStats.summary.activeDays}일`
                 : `Scanned every 10 min · Kimchi (premium 1%↑) ${arbStats.summary.kimchiHits.toLocaleString()} hits (best +${arbStats.summary.kimchiBest.toFixed(2)}%) · Inventory ${arbStats.summary.invHits.toLocaleString()} hits (best +${arbStats.summary.invBest.toFixed(2)}%) · ${arbStats.summary.activeDays} active days`}
             </p>
             {(() => {
