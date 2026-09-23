@@ -59,11 +59,10 @@ function KimchiDetailInner({ params }: { params: Promise<{ coin: string }> }) {
 
   const refreshLive = useCallback(async () => {
     try {
-      const res = await fetch("https://api.upbit.com/v1/orderbook?markets=KRW-USDT");
+      const res = await fetch("/api/usdt-krw");
       if (res.ok) {
-        const data = await res.json() as { orderbook_units: { ask_price: number }[] }[];
-        const ask = data?.[0]?.orderbook_units?.[0]?.ask_price;
-        if (ask) setLiveUsdtKrw(ask);
+        const data = await res.json() as { ask?: number };
+        if (data.ask) setLiveUsdtKrw(data.ask);
       }
       setLiveFetchedAt(new Date().toLocaleTimeString(lang === "ko" ? "ko-KR" : "en-US"));
     } catch {}

@@ -41,12 +41,12 @@ function OpportunityDetailInner({ params }: { params: Promise<{ id: string }> })
     const upbitCoin = upbitSymbolMap[coin] ?? coin;
     try {
       const [usdtOrderbook, coinOrderbook, binanceBook, fxRes] = await Promise.all([
-        fetch(`https://api.upbit.com/v1/orderbook?markets=KRW-USDT`).then(r => r.ok ? r.json() : null).catch(() => null),
+        fetch(`/api/usdt-krw`).then(r => r.ok ? r.json() : null).catch(() => null),
         fetch(`https://api.upbit.com/v1/orderbook?markets=KRW-${upbitCoin}`).then(r => r.ok ? r.json() : null).catch(() => null),
         fetch(`https://data-api.binance.vision/api/v3/ticker/bookTicker?symbol=${coin}USDT`).then(r => r.ok ? r.json() : null).catch(() => null),
         fetch(`https://open.er-api.com/v6/latest/USD`).then(r => r.ok ? r.json() : null).catch(() => null),
       ]);
-      if (usdtOrderbook?.[0]?.orderbook_units?.[0]?.ask_price) setLiveUsdtKrw(usdtOrderbook[0].orderbook_units[0].ask_price);
+      if (usdtOrderbook?.ask) setLiveUsdtKrw(usdtOrderbook.ask);
       if (coinOrderbook?.[0]?.orderbook_units?.[0]) {
         setLiveUpbitKrw(coinOrderbook[0].orderbook_units[0].bid_price ?? coinOrderbook[0].orderbook_units[0].ask_price);
       }
