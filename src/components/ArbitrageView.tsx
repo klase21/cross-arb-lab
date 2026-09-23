@@ -6,12 +6,11 @@ import DexArbitrageView from "@/components/DexArbitrageView";
 import CexCexView from "@/components/CexCexView";
 import { useLang } from "@/lib/i18n";
 
-function Section({ titleKey, descKey, children }: { titleKey: string; descKey: string; children: ReactNode }) {
+function Section({ titleKey, children }: { titleKey: string; children: ReactNode }) {
   const { t } = useLang();
   return (
     <section className="mb-10">
-      <h2 className="text-base font-bold tracking-tight">{t(titleKey)}</h2>
-      <p className="text-xs text-zinc-500 mt-0.5 mb-4">{t(descKey)}</p>
+      <h2 className="text-base font-bold tracking-tight mb-4">{t(titleKey)}</h2>
       {children}
     </section>
   );
@@ -20,13 +19,13 @@ function Section({ titleKey, descKey, children }: { titleKey: string; descKey: s
 export default function ArbitrageView() {
   return (
     <div>
-      <Section titleKey="tab.kimchi.title" descKey="tab.kimchi.desc">
+      <Section titleKey="tab.kimchi.title">
         <KimchiView />
       </Section>
-      <Section titleKey="tab.arbitrage.title" descKey="tab.arbitrage.desc">
+      <Section titleKey="tab.arbitrage.title">
         <DexArbitrageView />
       </Section>
-      <Section titleKey="tab.cex.title" descKey="tab.cex.desc">
+      <Section titleKey="tab.cex.title">
         <CexCexView />
       </Section>
     </div>
