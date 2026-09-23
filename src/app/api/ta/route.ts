@@ -3,13 +3,14 @@ import { analyze, type Candle, type TaReading } from "@/lib/ta";
 import { BINANCE_SPOT } from "@/lib/binance";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 const BINANCE_24H = `${BINANCE_SPOT}/api/v3/ticker/24hr`;
 const BINANCE_KLINES = `${BINANCE_SPOT}/api/v3/klines`;
 const UPBIT_MARKETS = "https://api.upbit.com/v1/market/all?isDetails=false";
 
 const INTERVALS = new Set(["15m", "1h", "4h", "1d"]);
-const UNIVERSE_SIZE = 40;
+const UNIVERSE_SIZE = 100;
 const KLINE_LIMIT = 200;
 
 const EXCLUDED_QUOTES = ["USDT", "USDC", "FDUSD", "TUSD", "USDP", "DAI", "EUR", "BRL", "TRY", "GBP"];
@@ -90,7 +91,7 @@ async function getKlines(symbol: string, interval: string): Promise<Candle[]> {
     }))
     .filter(k => Number.isFinite(k.c) && k.c > 0);
   if (candles.length > 0) {
-    if (klineCache.size > 200) klineCache.clear();
+    if (klineCache.size > 500) klineCache.clear();
     klineCache.set(key, { at: now, candles });
   }
   return candles.length > 0 ? candles : (hit?.candles ?? []);
