@@ -27,12 +27,15 @@ import {
   type PaperVenue,
 } from "@/lib/paper";
 import {
+  AUTO_PRESETS,
   DEFAULT_AUTO_CONFIG,
   loadAutoConfig,
   loadAutoStatus,
+  matchPreset,
   saveAutoConfig,
   type AutoConfig,
   type AutoStatus,
+  type PresetId,
 } from "@/lib/auto";
 import { fmtQty, fmtUsd2 } from "@/lib/format";
 
@@ -554,6 +557,61 @@ export default function PaperView() {
             </div>
           );
         })()}
+        <div className="mt-3 pt-3 border-t border-zinc-800">
+          <div className="flex items-center gap-1.5 mb-2 flex-wrap">
+            <span className="text-[11px] text-zinc-500">{t("paper.preset")}:</span>
+            {(Object.keys(AUTO_PRESETS) as PresetId[]).map(id => (
+              <button
+                key={id}
+                onClick={() => setAuto({ ...AUTO_PRESETS[id] })}
+                className={`px-2.5 py-1 rounded-md text-xs whitespace-nowrap transition-colors ${matchPreset(autoCfg) === id ? "bg-emerald-600 text-white" : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700"}`}
+              >
+                {t(`paper.preset.${id}`)}
+              </button>
+            ))}
+            {matchPreset(autoCfg) === null && (
+              <span className="px-2.5 py-1 rounded-md text-xs bg-amber-500/15 text-amber-300">{t("paper.preset.custom")}</span>
+            )}
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+            <label className="flex items-center justify-between gap-2 bg-zinc-950 rounded p-2">
+              <span className="text-zinc-400">{t("paper.autoSpot")}</span>
+              <button onClick={() => setAuto({ spotEnabled: !autoCfg.spotEnabled })} className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full ${autoCfg.spotEnabled ? "bg-emerald-600" : "bg-zinc-700"}`}>
+                <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${autoCfg.spotEnabled ? "translate-x-[18px]" : "translate-x-1"}`} />
+              </button>
+            </label>
+            <label className="flex items-center justify-between gap-2 bg-zinc-950 rounded p-2">
+              <span className="text-zinc-400">{t("paper.autoFunding")}</span>
+              <button onClick={() => setAuto({ fundingEnabled: !autoCfg.fundingEnabled })} className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full ${autoCfg.fundingEnabled ? "bg-emerald-600" : "bg-zinc-700"}`}>
+                <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${autoCfg.fundingEnabled ? "translate-x-[18px]" : "translate-x-1"}`} />
+              </button>
+            </label>
+            <label className="block bg-zinc-950 rounded p-2">
+              <span className="text-zinc-400">{t("paper.autoSpotThr")} ≥ <b className="text-zinc-200">{autoCfg.spotThresholdPct}%</b></span>
+              <input type="range" min={0.5} max={10} step={0.5} value={autoCfg.spotThresholdPct} onChange={e => setAuto({ spotThresholdPct: Number(e.target.value) })} className="w-full accent-emerald-500" />
+            </label>
+            <label className="block bg-zinc-950 rounded p-2">
+              <span className="text-zinc-400">{t("paper.autoFundThr")} ≥ <b className="text-zinc-200">{autoCfg.fundingThresholdApr}%</b></span>
+              <input type="range" min={10} max={300} step={10} value={autoCfg.fundingThresholdApr} onChange={e => setAuto({ fundingThresholdApr: Number(e.target.value) })} className="w-full accent-emerald-500" />
+            </label>
+            <label className="block bg-zinc-950 rounded p-2">
+              <span className="text-zinc-400">{t("paper.autoSpotNot")} $<b className="text-zinc-200">{autoCfg.spotNotionalUsd}</b></span>
+              <input type="range" min={100} max={5000} step={100} value={autoCfg.spotNotionalUsd} onChange={e => setAuto({ spotNotionalUsd: Number(e.target.value) })} className="w-full accent-emerald-500" />
+            </label>
+            <label className="block bg-zinc-950 rounded p-2">
+              <span className="text-zinc-400">{t("paper.autoFundNot")} $<b className="text-zinc-200">{autoCfg.fundingNotionalUsd}</b></span>
+              <input type="range" min={100} max={10000} step={100} value={autoCfg.fundingNotionalUsd} onChange={e => setAuto({ fundingNotionalUsd: Number(e.target.value) })} className="w-full accent-emerald-500" />
+            </label>
+            <label className="block bg-zinc-950 rounded p-2">
+              <span className="text-zinc-400">{t("paper.autoCooldown")} <b className="text-zinc-200">{autoCfg.cooldownMin}{t("common.minute")}</b></span>
+              <input type="range" min={10} max={240} step={10} value={autoCfg.cooldownMin} onChange={e => setAuto({ cooldownMin: Number(e.target.value) })} className="w-full accent-emerald-500" />
+            </label>
+            <label className="block bg-zinc-950 rounded p-2">
+              <span className="text-zinc-400">{t("paper.autoFundExit")} &lt; <b className="text-zinc-200">{autoCfg.fundingExitApr}%</b></span>
+              <input type="range" min={5} max={100} step={5} value={autoCfg.fundingExitApr} onChange={e => setAuto({ fundingExitApr: Number(e.target.value) })} className="w-full accent-emerald-500" />
+            </label>
+          </div>
+        </div>
       </section>
 
       <section>
@@ -726,57 +784,6 @@ export default function PaperView() {
           {confirmReset ? t("paper.confirmReset") : t("paper.reset")}
         </button>
       </section>
-      <section className="rounded-xl border border-zinc-800 p-4">
-        <div className="flex items-center gap-3 mb-3">
-          <h2 className="text-sm font-semibold">🤖 {t("paper.autoTitle")}</h2>
-          <button
-            onClick={() => setAuto({ enabled: !autoCfg.enabled })}
-            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${autoCfg.enabled ? "bg-emerald-600" : "bg-zinc-700"}`}
-          >
-            <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${autoCfg.enabled ? "translate-x-[18px]" : "translate-x-1"}`} />
-          </button>
-          <span className="text-[11px] text-zinc-500">{t("paper.autoDesc")}</span>
-        </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
-          <label className="flex items-center justify-between gap-2 bg-zinc-950 rounded p-2">
-            <span className="text-zinc-400">{t("paper.autoSpot")}</span>
-            <button onClick={() => setAuto({ spotEnabled: !autoCfg.spotEnabled })} className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full ${autoCfg.spotEnabled ? "bg-emerald-600" : "bg-zinc-700"}`}>
-              <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${autoCfg.spotEnabled ? "translate-x-[18px]" : "translate-x-1"}`} />
-            </button>
-          </label>
-          <label className="flex items-center justify-between gap-2 bg-zinc-950 rounded p-2">
-            <span className="text-zinc-400">{t("paper.autoFunding")}</span>
-            <button onClick={() => setAuto({ fundingEnabled: !autoCfg.fundingEnabled })} className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full ${autoCfg.fundingEnabled ? "bg-emerald-600" : "bg-zinc-700"}`}>
-              <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${autoCfg.fundingEnabled ? "translate-x-[18px]" : "translate-x-1"}`} />
-            </button>
-          </label>
-          <label className="block bg-zinc-950 rounded p-2">
-            <span className="text-zinc-400">{t("paper.autoSpotThr")} ≥ <b className="text-zinc-200">{autoCfg.spotThresholdPct}%</b></span>
-            <input type="range" min={0.5} max={10} step={0.5} value={autoCfg.spotThresholdPct} onChange={e => setAuto({ spotThresholdPct: Number(e.target.value) })} className="w-full accent-emerald-500" />
-          </label>
-          <label className="block bg-zinc-950 rounded p-2">
-            <span className="text-zinc-400">{t("paper.autoFundThr")} ≥ <b className="text-zinc-200">{autoCfg.fundingThresholdApr}%</b></span>
-            <input type="range" min={10} max={300} step={10} value={autoCfg.fundingThresholdApr} onChange={e => setAuto({ fundingThresholdApr: Number(e.target.value) })} className="w-full accent-emerald-500" />
-          </label>
-          <label className="block bg-zinc-950 rounded p-2">
-            <span className="text-zinc-400">{t("paper.autoSpotNot")} $<b className="text-zinc-200">{autoCfg.spotNotionalUsd}</b></span>
-            <input type="range" min={100} max={5000} step={100} value={autoCfg.spotNotionalUsd} onChange={e => setAuto({ spotNotionalUsd: Number(e.target.value) })} className="w-full accent-emerald-500" />
-          </label>
-          <label className="block bg-zinc-950 rounded p-2">
-            <span className="text-zinc-400">{t("paper.autoFundNot")} $<b className="text-zinc-200">{autoCfg.fundingNotionalUsd}</b></span>
-            <input type="range" min={100} max={10000} step={100} value={autoCfg.fundingNotionalUsd} onChange={e => setAuto({ fundingNotionalUsd: Number(e.target.value) })} className="w-full accent-emerald-500" />
-          </label>
-          <label className="block bg-zinc-950 rounded p-2">
-            <span className="text-zinc-400">{t("paper.autoCooldown")} <b className="text-zinc-200">{autoCfg.cooldownMin}{t("common.minute")}</b></span>
-            <input type="range" min={10} max={240} step={10} value={autoCfg.cooldownMin} onChange={e => setAuto({ cooldownMin: Number(e.target.value) })} className="w-full accent-emerald-500" />
-          </label>
-          <label className="block bg-zinc-950 rounded p-2">
-            <span className="text-zinc-400">{t("paper.autoFundExit")} &lt; <b className="text-zinc-200">{autoCfg.fundingExitApr}%</b></span>
-            <input type="range" min={5} max={100} step={5} value={autoCfg.fundingExitApr} onChange={e => setAuto({ fundingExitApr: Number(e.target.value) })} className="w-full accent-emerald-500" />
-          </label>
-        </div>
-      </section>
-
       <p className="text-[11px] text-zinc-600">{t("paper.disclaimer")}</p>
     </div>
   );

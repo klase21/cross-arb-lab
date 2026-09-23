@@ -78,6 +78,69 @@ export const DEFAULT_AUTO_CONFIG: AutoConfig = {
   maxFundingOpen: 5,
 };
 
+export type PresetId = "conservative" | "balanced" | "aggressive";
+
+export const AUTO_PRESETS: Record<PresetId, Omit<AutoConfig, "enabled">> = {
+  conservative: {
+    spotEnabled: true,
+    fundingEnabled: true,
+    spotThresholdPct: 3,
+    fundingThresholdApr: 100,
+    fundingExitApr: 20,
+    spotNotionalUsd: 300,
+    fundingNotionalUsd: 500,
+    cooldownMin: 120,
+    maxSpotPerCycle: 2,
+    maxFundingOpen: 3,
+  },
+  balanced: {
+    spotEnabled: true,
+    fundingEnabled: true,
+    spotThresholdPct: 2,
+    fundingThresholdApr: 50,
+    fundingExitApr: 15,
+    spotNotionalUsd: 500,
+    fundingNotionalUsd: 1000,
+    cooldownMin: 60,
+    maxSpotPerCycle: 3,
+    maxFundingOpen: 5,
+  },
+  aggressive: {
+    spotEnabled: true,
+    fundingEnabled: true,
+    spotThresholdPct: 1,
+    fundingThresholdApr: 30,
+    fundingExitApr: 10,
+    spotNotionalUsd: 1000,
+    fundingNotionalUsd: 2000,
+    cooldownMin: 30,
+    maxSpotPerCycle: 5,
+    maxFundingOpen: 8,
+  },
+};
+
+/** Which preset the config currently matches (null = custom tweaks). */
+export function matchPreset(cfg: AutoConfig): PresetId | null {
+  for (const id of Object.keys(AUTO_PRESETS) as PresetId[]) {
+    const p = AUTO_PRESETS[id];
+    if (
+      p.spotEnabled === cfg.spotEnabled &&
+      p.fundingEnabled === cfg.fundingEnabled &&
+      p.spotThresholdPct === cfg.spotThresholdPct &&
+      p.fundingThresholdApr === cfg.fundingThresholdApr &&
+      p.fundingExitApr === cfg.fundingExitApr &&
+      p.spotNotionalUsd === cfg.spotNotionalUsd &&
+      p.fundingNotionalUsd === cfg.fundingNotionalUsd &&
+      p.cooldownMin === cfg.cooldownMin &&
+      p.maxSpotPerCycle === cfg.maxSpotPerCycle &&
+      p.maxFundingOpen === cfg.maxFundingOpen
+    ) {
+      return id;
+    }
+  }
+  return null;
+}
+
 export function loadAutoConfig(): AutoConfig {
   if (typeof window === "undefined") return DEFAULT_AUTO_CONFIG;
   try {
