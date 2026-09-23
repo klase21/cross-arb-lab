@@ -117,7 +117,7 @@ export default function KimchiView() {
   const [dbHistory, setDbHistory] = useState<Record<string, { time: number; premium: number }[]>>({});
   const dbCoinsKey = useRef<string>("");
   // CEX-to-CEX inventory arb per coin (merged from the old CEX section into this table).
-  const [cexMap, setCexMap] = useState<Map<string, { net: number; buy: string; sell: string }>>(new Map());
+  const [cexMap, setCexMap] = useState<Map<string, { net: number; buy: string; sell: string; depthNet?: number; fillable?: boolean; filledPct?: number }>>(new Map());
 
   useEffect(() => {
     try {
@@ -189,9 +189,21 @@ export default function KimchiView() {
               const cexData = await cexRes.json();
               const { findCexOpportunities } = await import("@/lib/cex-arbitrage");
               const opps = findCexOpportunities(cexData.prices ?? {});
-              const map = new Map<string, { net: number; buy: string; sell: string }>();
+              const depth = (cexData.depth ?? {}) as Record<string, { buy: string; sell: string; netPct: number; fillable: boolean; filledPct: number }>;
+              const map = new Map<string, { net: number; buy: string; sell: string; depthNet?: number; fillable?: boolean; filledPct?: number }>();
               for (const opp of opps) {
-                if (!map.has(opp.coin)) map.set(opp.coin, { net: opp.netSpreadPct, buy: opp.buyCex, sell: opp.sellCex });
+                if (!map.has(opp.coin)) {
+                  const d = depth[opp.coin];
+                  const sameRoute = d && d.buy === opp.buyCex && d.sell === opp.sellCex;
+                  map.set(opp.coin, {
+                    net: opp.netSpreadPct,
+                    buy: opp.buyCex,
+                    sell: opp.sellCex,
+                    depthNet: sameRoute ? d.netPct : undefined,
+                    fillable: sameRoute ? d.fillable : undefined,
+                    filledPct: sameRoute ? d.filledPct : undefined,
+                  });
+                }
               }
               setCexMap(map);
             }
@@ -373,7 +385,7 @@ export default function KimchiView() {
   };
 
   const exportCsv = () => {
-    const headers = ["Coin", "Name", "Upbit_KRW_Bid", "Global_USD_Ask", "Premium_Pct", "CMC_Dev_Pct", "Volume_KRW_24h", "RoundTrip_KRW", "RoundTrip_Pct", "Inventory_Net_Pct", "Inventory_Buy", "Inventory_Sell", "Risk_Total", "Risk_Grade"];
+    const headers = ["Coin", "Name", "Upbit_KRW_Bid", "Global_USD_Ask", "Premium_Pct", "CMC_Dev_Pct", "Volume_KRW_24h", "RoundTrip_KRW", "RoundTrip_Pct", "Inventory_Net_Pct", "Inventory_Depth_Net_Pct", "Inventory_Fillable_1M", "Inventory_Buy", "Inventory_Sell", "Risk_Total", "Risk_Grade"];
     const rows = filtered.map(item => {
       const r = getKimchiRisk(item);
       const inv = cexMap.get(item.coin);
@@ -388,6 +400,8 @@ export default function KimchiView() {
         item.trip ? Math.round(item.trip.netProfitKrw).toString() : "",
         item.trip ? item.trip.netProfitPct.toFixed(2) : "",
         inv ? inv.net.toFixed(2) : "",
+        inv?.depthNet !== undefined ? inv.depthNet.toFixed(2) : "",
+        inv?.fillable !== undefined ? (inv.fillable ? "Y" : "N") : "",
         inv?.buy ?? "",
         inv?.sell ?? "",
         r.total.toString(),
@@ -409,7 +423,7 @@ export default function KimchiView() {
       switch (sortKey) {
         case "premium": return item.premiumPct;
         case "roundTrip": return item.trip?.netProfitPct ?? -Infinity;
-        case "inventory": return cexMap.get(item.coin)?.net ?? -Infinity;
+        case "inventory": return cexMap.get(item.coin)?.depthNet ?? cexMap.get(item.coin)?.net ?? -Infinity;
         case "cmcDev": return item.binanceDevPct ?? Infinity;
         case "risk": return getKimchiRisk(item).total;
         case "opportunity": return getOpportunityScore(item);
@@ -752,11 +766,21 @@ export default function KimchiView() {
                     {(() => {
                       const inv = cexMap.get(item.coin);
                       if (!inv) return <span className="text-zinc-600">-</span>;
+                      const shown = inv.depthNet ?? inv.net;
+                      const checked = inv.depthNet !== undefined && inv.fillable !== undefined;
+                      const ok = checked && inv.fillable && shown > 0;
+                      const title = checked
+                        ? (lang === "ko"
+                          ? `오더북 실측 100만원 시뮬레이션 (${inv.buy} 매수 → ${inv.sell} 매도): ${inv.filledPct?.toFixed(0)}% 체결, 순수익 ${shown.toFixed(2)}%`
+                          : `Orderbook-simulated 1M KRW fill (${inv.buy} → ${inv.sell}): ${inv.filledPct?.toFixed(0)}% filled, net ${shown.toFixed(2)}%`)
+                        : (lang === "ko" ? `호가 기준 추정치 (${inv.buy} → ${inv.sell}) — 오더북 미확인` : `Quote estimate (${inv.buy} → ${inv.sell}) — book unchecked`);
                       return (
-                        <>
-                          <span className="font-semibold text-emerald-400">+{inv.net.toFixed(2)}%</span>
+                        <span title={title}>
+                          <span className={`font-semibold ${ok ? "text-emerald-400" : shown > 0 ? "text-emerald-300/70" : "text-zinc-500"}`}>
+                            {checked && inv.fillable ? "✓" : checked ? "⚠" : ""}{shown >= 0 ? "+" : ""}{shown.toFixed(2)}%
+                          </span>
                           <p className="text-[10px] font-normal text-zinc-500 capitalize">{inv.buy}→{inv.sell}</p>
-                        </>
+                        </span>
                       );
                     })()}
                   </td>
@@ -837,7 +861,9 @@ export default function KimchiView() {
                   {(() => {
                     const inv = cexMap.get(item.coin);
                     if (!inv) return null;
-                    return <span className="text-xs font-mono text-emerald-400" title={`CEX ${inv.buy} → ${inv.sell}`}>{lang === "ko" ? "보유" : "Inv"} +{inv.net.toFixed(2)}%</span>;
+                    const shown = inv.depthNet ?? inv.net;
+                    const mark = inv.depthNet !== undefined ? (inv.fillable ? "✓" : "⚠") : "";
+                    return <span className={`text-xs font-mono ${shown > 0 && inv.fillable !== false ? "text-emerald-400" : "text-zinc-500"}`} title={`CEX ${inv.buy} → ${inv.sell}`}>{lang === "ko" ? "보유" : "Inv"} {mark}{shown >= 0 ? "+" : ""}{shown.toFixed(2)}%</span>;
                   })()}
                 </div>
                 <Link href={`/kimchi/${encodeURIComponent(item.coin)}`} className="text-xs text-zinc-500 border border-zinc-700 rounded-full px-3 py-1">{lang === "ko" ? "상세" : "Detail"} →</Link>
