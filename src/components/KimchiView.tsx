@@ -448,19 +448,9 @@ export default function KimchiView() {
 
   return (
     <>
-      <div className="rounded-xl border border-orange-900/50 bg-orange-950/20 p-4 mb-4">
-        <div className="flex items-center justify-between flex-wrap gap-2">
-          <p className="text-sm text-orange-300 font-medium">{t("kimchi.subtitle")}</p>
-          <div className="flex items-center gap-3">
-            {lastUpdated && <span className="text-xs text-zinc-600">{t("common.lastUpdated")}: {lastUpdated}</span>}
-            <span className="text-xs font-mono text-zinc-400" title="Live USD/KRW rate used to convert Upbit KRW prices to USD">FX: {fxRate.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 5 })} KRW/USD</span>
-          </div>
-        </div>
-        <p className="text-xs text-zinc-500 mt-1">
-          {lang === "ko"
-            ? `Premium = (업비트 매도 Bid ÷ ${fxRate.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 5 })} - 글로벌 매수 Ask) ÷ 글로벌 Ask. 글로벌가는 CMC 리스팅 확인된 거래소(Binance 현물 → Gate.io → Alpha 지수가 순)의 오더북 최우선 호가 기준이며, 입출금 상태는 우측 지갑 아이콘에서 확인하세요.`
-            : `Premium = (Upbit Bid ÷ ${fxRate.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 5 })} - Global Ask) ÷ Global Ask. Global quotes come from the CMC-verified venue (Binance spot → Gate.io → Alpha index) top orderbook levels; check wallet status on the right.`}
-        </p>
+      <div className="flex items-center justify-end gap-3 mb-4">
+        {lastUpdated && <span className="text-xs text-zinc-600">{t("common.lastUpdated")}: {lastUpdated}</span>}
+        <span className="text-xs font-mono text-zinc-400" title="Live USD/KRW rate used to convert Upbit KRW prices to USD">FX: {fxRate.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 5 })} KRW/USD</span>
       </div>
 
       {topMovers.length > 0 && (
