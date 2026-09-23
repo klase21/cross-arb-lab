@@ -48,7 +48,7 @@ function formatKrw(value: number) {
   return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-type SortKey = "premium" | "roundTrip" | "cmcDev" | "coin" | "risk" | "opportunity";
+type SortKey = "premium" | "roundTrip" | "inventory" | "cmcDev" | "coin" | "risk" | "opportunity";
 type SortDir = "desc" | "asc";
 
 function Sparkline({ data, zScore }: { data: number[]; zScore?: number }) {
@@ -116,6 +116,8 @@ export default function KimchiView() {
   // accumulation when a coin has >= 2 points; localStorage stays as fallback.
   const [dbHistory, setDbHistory] = useState<Record<string, { time: number; premium: number }[]>>({});
   const dbCoinsKey = useRef<string>("");
+  // CEX-to-CEX inventory arb per coin (merged from the old CEX section into this table).
+  const [cexMap, setCexMap] = useState<Map<string, { net: number; buy: string; sell: string }>>(new Map());
 
   useEffect(() => {
     try {
@@ -177,6 +179,24 @@ export default function KimchiView() {
           });
         }
         if (typeof data.fxRate === "number" && data.fxRate > 500) setFxRate(data.fxRate);
+        // Inventory arb (CEX-to-CEX) for the same coins — merged into this table.
+        try {
+          const coins = (Array.isArray(data.items) ? (data.items as KimchiItem[]) : [])
+            .map(i => i.coin).filter(c => /^[A-Z0-9]{2,12}$/.test(c));
+          if (coins.length > 0) {
+            const cexRes = await fetch(`/api/cex-prices?coins=${encodeURIComponent(coins.join(","))}`);
+            if (cexRes.ok) {
+              const cexData = await cexRes.json();
+              const { findCexOpportunities } = await import("@/lib/cex-arbitrage");
+              const opps = findCexOpportunities(cexData.prices ?? {});
+              const map = new Map<string, { net: number; buy: string; sell: string }>();
+              for (const opp of opps) {
+                if (!map.has(opp.coin)) map.set(opp.coin, { net: opp.netSpreadPct, buy: opp.buyCex, sell: opp.sellCex });
+              }
+              setCexMap(map);
+            }
+          }
+        } catch {}
       }
       if (walletRes?.ok) {
         const walletData = await walletRes.json();
@@ -353,9 +373,10 @@ export default function KimchiView() {
   };
 
   const exportCsv = () => {
-    const headers = ["Coin", "Name", "Upbit_KRW_Bid", "Global_USD_Ask", "Premium_Pct", "CMC_Dev_Pct", "Volume_KRW_24h", "RoundTrip_KRW", "RoundTrip_Pct", "Risk_Total", "Risk_Grade"];
+    const headers = ["Coin", "Name", "Upbit_KRW_Bid", "Global_USD_Ask", "Premium_Pct", "CMC_Dev_Pct", "Volume_KRW_24h", "RoundTrip_KRW", "RoundTrip_Pct", "Inventory_Net_Pct", "Inventory_Buy", "Inventory_Sell", "Risk_Total", "Risk_Grade"];
     const rows = filtered.map(item => {
       const r = getKimchiRisk(item);
+      const inv = cexMap.get(item.coin);
       return [
         item.coin,
         item.nameKr,
@@ -366,6 +387,9 @@ export default function KimchiView() {
         item.volumeKrw ? Math.round(item.volumeKrw).toString() : "",
         item.trip ? Math.round(item.trip.netProfitKrw).toString() : "",
         item.trip ? item.trip.netProfitPct.toFixed(2) : "",
+        inv ? inv.net.toFixed(2) : "",
+        inv?.buy ?? "",
+        inv?.sell ?? "",
         r.total.toString(),
         r.grade,
       ];
@@ -385,6 +409,7 @@ export default function KimchiView() {
       switch (sortKey) {
         case "premium": return item.premiumPct;
         case "roundTrip": return item.trip?.netProfitPct ?? -Infinity;
+        case "inventory": return cexMap.get(item.coin)?.net ?? -Infinity;
         case "cmcDev": return item.binanceDevPct ?? Infinity;
         case "risk": return getKimchiRisk(item).total;
         case "opportunity": return getOpportunityScore(item);
@@ -419,7 +444,7 @@ export default function KimchiView() {
         if (Number.isNaN(diff)) return 0;
         return sortDir === "desc" ? diff : -diff;
       });
-  }, [items, search, verifiedOnly, reverseOnly, hideAlpha, favorites, sortKey, sortDir, walletMap, mergedHistory, topMovers]);
+  }, [items, search, verifiedOnly, reverseOnly, hideAlpha, favorites, sortKey, sortDir, walletMap, mergedHistory, topMovers, cexMap]);
 
   return (
     <>
@@ -501,7 +526,7 @@ export default function KimchiView() {
       </div>
 
       <div className="hidden md:block rounded-xl border border-zinc-800 overflow-x-auto">
-        <table className="w-full text-sm min-w-[1210px] table-fixed">
+        <table className="w-full text-sm min-w-[1310px] table-fixed">
           <colgroup>
             <col style={{ width: 150 }} />
             <col style={{ width: 60 }} />
@@ -516,6 +541,7 @@ export default function KimchiView() {
             <col style={{ width: 70 }} />
             <col style={{ width: 78 }} />
             <col style={{ width: 135 }} />
+            <col style={{ width: 100 }} />
           </colgroup>
           <thead>
             <tr className="bg-zinc-900/80 text-zinc-500 text-xs">
@@ -561,6 +587,13 @@ export default function KimchiView() {
                 onClick={() => toggleSort("roundTrip")}
               >
                 {t("kimchi.header.roundTrip")} {sortKey === "roundTrip" && <span className="text-emerald-400">{sortDir === "desc" ? "▼" : "▲"}</span>}
+              </th>
+              <th
+                className="text-right font-medium px-4 py-2.5 pr-5 cursor-pointer hover:text-zinc-300 select-none"
+                title={lang === "ko" ? "CEX간 보유차익 (수수료 차감 후) — 클릭하여 정렬" : "CEX-to-CEX inventory arb (net of fees) — click to sort"}
+                onClick={() => toggleSort("inventory")}
+              >
+                {lang === "ko" ? "보유차익" : "Inventory"} {sortKey === "inventory" && <span className="text-emerald-400">{sortDir === "desc" ? "▼" : "▲"}</span>}
               </th>
             </tr>
           </thead>
@@ -725,14 +758,26 @@ export default function KimchiView() {
                       </>
                     )}
                   </td>
+                  <td className="text-right px-2 py-2.5 pr-3 font-mono whitespace-nowrap">
+                    {(() => {
+                      const inv = cexMap.get(item.coin);
+                      if (!inv) return <span className="text-zinc-600">-</span>;
+                      return (
+                        <>
+                          <span className="font-semibold text-emerald-400">+{inv.net.toFixed(2)}%</span>
+                          <p className="text-[10px] font-normal text-zinc-500 capitalize">{inv.buy}→{inv.sell}</p>
+                        </>
+                      );
+                    })()}
+                  </td>
                 </tr>
               );
             })}
             {filtered.length === 0 && !loading && (
-              <tr><td colSpan={13} className="text-center text-zinc-500 py-8">{t("kimchi.noMatch")}</td></tr>
+              <tr><td colSpan={14} className="text-center text-zinc-500 py-8">{t("kimchi.noMatch")}</td></tr>
             )}
             {loading && items.length === 0 && (
-              <tr><td colSpan={13} className="text-center text-zinc-500 py-8 animate-pulse">{t("kimchi.loadingPairs")}</td></tr>
+              <tr><td colSpan={14} className="text-center text-zinc-500 py-8 animate-pulse">{t("kimchi.loadingPairs")}</td></tr>
             )}
           </tbody>
         </table>
@@ -799,6 +844,11 @@ export default function KimchiView() {
                 <div className="flex items-center gap-2">
                   <Sparkline data={(mergedHistory[item.coin] ?? []).map(p => p.premium)} zScore={computeZScore(mergedHistory[item.coin])} />
                   {trip && <span className={`text-xs font-mono ${trip.netProfitKrw >= 0 ? "text-emerald-400" : "text-red-400"}`}>{trip.netProfitKrw >= 0 ? "+" : ""}{displayCurrency === "USD" ? `$${(Math.abs(trip.netProfitKrw)/(fxRate||1350)).toFixed(0)}` : `${Math.round(trip.netProfitKrw).toLocaleString()} KRW`}</span>}
+                  {(() => {
+                    const inv = cexMap.get(item.coin);
+                    if (!inv) return null;
+                    return <span className="text-xs font-mono text-emerald-400" title={`CEX ${inv.buy} → ${inv.sell}`}>{lang === "ko" ? "보유" : "Inv"} +{inv.net.toFixed(2)}%</span>;
+                  })()}
                 </div>
                 <Link href={`/kimchi/${encodeURIComponent(item.coin)}`} className="text-xs text-zinc-500 border border-zinc-700 rounded-full px-3 py-1">{lang === "ko" ? "상세" : "Detail"} →</Link>
               </div>

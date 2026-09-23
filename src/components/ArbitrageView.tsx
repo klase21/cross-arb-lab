@@ -2,8 +2,10 @@
 
 import type { ReactNode } from "react";
 import KimchiView from "@/components/KimchiView";
-import DexArbitrageView from "@/components/DexArbitrageView";
-import CexCexView from "@/components/CexCexView";
+// Preserved but unmounted: withdraw arb = kimchi table round-trip column,
+// inventory arb = kimchi table 보유차익 column (per-coin, same rows).
+// import DexArbitrageView from "@/components/DexArbitrageView";
+// import CexCexView from "@/components/CexCexView";
 import { useLang } from "@/lib/i18n";
 
 function Section({ titleKey, children }: { titleKey: string; children: ReactNode }) {
@@ -22,12 +24,13 @@ export default function ArbitrageView() {
       <Section titleKey="tab.kimchi.title">
         <KimchiView />
       </Section>
+      {/* Unmounted 2026-09: merged into the kimchi table above.
       <Section titleKey="tab.arbitrage.title">
         <DexArbitrageView />
       </Section>
       <Section titleKey="tab.cex.title">
         <CexCexView />
-      </Section>
+      </Section> */}
     </div>
   );
 }

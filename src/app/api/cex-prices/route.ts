@@ -6,9 +6,17 @@ export const dynamic = "force-dynamic";
 
 const COINS = ["USDT", "BTC", "ETH", "XRP", "SOL", "ADA"];
 
-export async function GET() {
+export async function GET(request: Request) {
   const prices: Record<string, Record<string, number>> = {}; // coin -> exchange -> priceUsd
   const fxRate = await getUsdKrwRate();
+
+  // Optional ?coins=BTC,ETH,... to cover any kimchi-table coins (default: core majors).
+  const requested = new URL(request.url).searchParams.get("coins");
+  const COINS = (() => {
+    if (!requested) return ["USDT", "BTC", "ETH", "XRP", "SOL", "ADA"];
+    const list = requested.split(",").map(s => s.trim().toUpperCase()).filter(s => /^[A-Z0-9]{2,12}$/.test(s) && s !== "USDT");
+    return list.length > 0 ? list.slice(0, 150) : ["USDT", "BTC", "ETH", "XRP", "SOL", "ADA"];
+  })();
 
   const fetchers: Promise<void>[] = [];
 
