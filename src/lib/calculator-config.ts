@@ -93,6 +93,7 @@ export const UPBIT_TRADING_FEE_PCT = 0.05;
 export const CEX_TRADING_FEES: Record<string, number> = {
   upbit: 0.05,
   bithumb: 0.1,
+  coinone: 0, // zero-fee promo — verify before executing
   binance: 0.1,
   bybit: 0.1,
   okx: 0.1,

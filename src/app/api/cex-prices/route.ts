@@ -94,6 +94,21 @@ export async function GET(request: Request) {
     } catch {}
   })());
 
+  fetchers.push((async () => {
+    try {
+      const res = await fetch("https://api.coinone.co.kr/ticker?currency=all", { next: { revalidate: 5 } });
+      if (!res.ok) return;
+      const data = await res.json();
+      for (const coin of COINS) {
+        const t = data.data?.[coin.toLowerCase()] ?? data[coin.toLowerCase()];
+        if (t?.last) {
+          prices[coin] = prices[coin] ?? {};
+          prices[coin].coinone = parseFloat(t.last) / fxRate;
+        }
+      }
+    } catch {}
+  })());
+
   await Promise.all(fetchers);
 
   return NextResponse.json({ prices, fxRate, timestamp: new Date().toISOString() });
