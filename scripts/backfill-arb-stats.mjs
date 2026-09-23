@@ -179,7 +179,7 @@ async function main() {
     .slice(0, TOP_N)
     .map(t => t.market.replace("KRW-", ""))
     .filter(c => /^[A-Z0-9]{2,12}$/.test(c));
-  if (COIN_FILTER) coins = coins.filter(c => COIN_FILTER.includes(c));
+  if (COIN_FILTER) coins = COIN_FILTER.filter(c => /^[A-Z0-9]{2,12}$/.test(c));
   console.log(`universe: ${coins.length} coins, ${DAYS} days`);
 
   // USDT/KRW hourly (FX proxy for kimchi premium) — fetched once.
