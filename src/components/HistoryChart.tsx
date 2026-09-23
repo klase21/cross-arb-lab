@@ -64,7 +64,7 @@ function Line({
   );
 }
 
-export default function HistoryChart({ symbol }: { symbol: string }) {
+export default function HistoryChart({ symbol, bin, showPremium = true }: { symbol: string; bin?: string; showPremium?: boolean }) {
   const { t, lang } = useLang();
   const [days, setDays] = useState(7);
   const [series, setSeries] = useState<Record<string, Pt[]>>({});
@@ -78,7 +78,8 @@ export default function HistoryChart({ symbol }: { symbol: string }) {
     // Klines fallback for coins outside the DB collection universe (top 60).
     // Served by /api/klines (Upbit blocks browser CORS, so server proxies).
     try {
-      const res = await fetch(`/api/klines?symbol=${encodeURIComponent(symbol)}&days=${d}`);
+      const binParam = bin && bin !== symbol ? `&bin=${encodeURIComponent(bin)}` : "";
+      const res = await fetch(`/api/klines?symbol=${encodeURIComponent(symbol)}&days=${d}${binParam}`);
       if (!res.ok) return false;
       const data = await res.json() as {
         series?: Record<string, Pt[]>;
@@ -87,14 +88,14 @@ export default function HistoryChart({ symbol }: { symbol: string }) {
       const up = data.series?.upbit ?? [];
       if (up.length < 2) return false;
       setSeries(data.series ?? {});
-      setPremium(Array.isArray(data.premium) ? data.premium : []);
+      setPremium(showPremium && Array.isArray(data.premium) ? data.premium : []);
       setPoints(up.length + (data.series?.binance?.length ?? 0));
       setSource("live");
       return true;
     } catch {
       return false;
     }
-  }, [symbol]);
+  }, [symbol, bin, showPremium]);
 
   const load = useCallback(async (d: number) => {
     try {
@@ -106,7 +107,7 @@ export default function HistoryChart({ symbol }: { symbol: string }) {
         const dbPoints = data.points ?? 0;
         if (dbPoints >= 4) {
           setSeries(data.series ?? {});
-          setPremium(Array.isArray(data.premium) ? data.premium : []);
+          setPremium(showPremium && Array.isArray(data.premium) ? data.premium : []);
           setPoints(dbPoints);
           setSource("db");
           return;
@@ -116,7 +117,7 @@ export default function HistoryChart({ symbol }: { symbol: string }) {
     } catch {} finally {
       setLoading(false);
     }
-  }, [symbol, loadLive]);
+  }, [symbol, loadLive, showPremium]);
 
   useEffect(() => {
     const kickoff = setTimeout(() => { void load(days); }, 0);

@@ -341,7 +341,18 @@ function KimchiDetailInner({ params }: { params: Promise<{ coin: string }> }) {
             </p>
           </div>
         )}
-        <HistoryChart symbol={coin} />
+        <HistoryChart
+          symbol={coin}
+          bin={item.binanceSymbol ?? coin}
+          showPremium={item.binanceSource !== "alpha" && item.binanceSource !== "gate" && item.binanceOnCmc !== false}
+        />
+        {(item.binanceSource === "alpha" || item.binanceSource === "gate" || item.binanceOnCmc === false) && (
+          <p className="text-[11px] text-zinc-600 -mt-3 mb-6 px-1">
+            {lang === "ko"
+              ? "Binance 현물 기준가가 없어 프리미엄 히스토리를 표시하지 않습니다 (글로벌 기준가와 다른 코인일 수 있음)."
+              : "No Binance spot quote — premium history hidden (global quote may be a different coin)."}
+          </p>
+        )}
 
         <div className="rounded-xl border border-zinc-800 p-6 mb-6">
           <h2 className="text-base font-semibold mb-3">{lang === "ko" ? "입출금 상태" : "Wallet Status"}</h2>
