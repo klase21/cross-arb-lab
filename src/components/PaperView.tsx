@@ -5,6 +5,7 @@ import { useLang } from "@/lib/i18n";
 import {
   accrueFunding,
   cancelOrder,
+  checkTpSl,
   clearAccount,
   clearEquity,
   closeFunding,
@@ -22,6 +23,7 @@ import {
   openFunding,
   recordEquity,
   saveAccount,
+  setTpSl,
   valuate,
   PAPER_FEES,
   type EquityPoint,
@@ -103,6 +105,8 @@ export default function PaperView() {
   const [orderType, setOrderType] = useState<"market" | "limit">("market");
   const [limitPrice, setLimitPrice] = useState("");
   const [book, setBook] = useState<{ bids: [number, number][]; asks: [number, number][] }>({ bids: [], asks: [] });
+  const [tape, setTape] = useState<{ p: number; q: number; t: number; sell: boolean }[]>([]);
+  const [coinSearch, setCoinSearch] = useState("");
   const [ticker24, setTicker24] = useState<{ change: number; high: number; low: number; vol: number } | null>(null);
   const [candles, setCandles] = useState<{ t: number; o: number; h: number; l: number; c: number; v: number }[]>([]);
   const [chartTf, setChartTf] = useState("1h");
@@ -213,8 +217,9 @@ export default function PaperView() {
     const set = items.slice(0, 12).map(i => i.coin.toUpperCase());
     const cur = symbol.trim().toUpperCase();
     if (cur && !set.includes(cur)) set.push(cur);
-    return set.slice(0, 13);
-  }, [items, symbol]);
+    const q = coinSearch.trim().toUpperCase();
+    return (q ? set.filter(c => c.includes(q)) : set).slice(0, 13);
+  }, [items, symbol, coinSearch]);
 
   // Binance direct fallback for non-KRW coins (e.g. NIL): vision is CORS-open.
   // Covers the ticket symbol plus any open Binance positions missing from kimchi.
@@ -256,17 +261,18 @@ export default function PaperView() {
     return q ? { venue: v, coin: sym, bidUsd: q.bid, askUsd: q.ask } : null;
   }, [byCoin, fx, extMap]);
 
-  // Exchange data: Binance book + 24h ticker + candles for the ticket symbol.
+  // Exchange data: Binance book + tape + 24h ticker + candles for the ticket symbol.
   useEffect(() => {
     let cancelled = false;
     const sym = symbol.trim().toUpperCase();
     if (!/^[A-Z0-9]{2,12}$/.test(sym)) return;
     const kickoff = setTimeout(async () => {
       try {
-        const [depthRes, t24Res, klRes] = await Promise.all([
+        const [depthRes, t24Res, klRes, tapeRes] = await Promise.all([
           fetch(`https://data-api.binance.vision/api/v3/depth?symbol=${sym}USDT&limit=10`).catch(() => null),
           fetch(`https://data-api.binance.vision/api/v3/ticker/24hr?symbol=${sym}USDT`).catch(() => null),
           fetch(`/api/candles?symbol=${sym}USDT&interval=${chartTf}`).catch(() => null),
+          fetch(`https://data-api.binance.vision/api/v3/aggTrades?symbol=${sym}USDT&limit=24`).catch(() => null),
         ]);
         if (cancelled) return;
         if (depthRes?.ok) {
@@ -293,6 +299,19 @@ export default function PaperView() {
           const d = await klRes.json();
           if (!cancelled && Array.isArray(d.candles)) setCandles(d.candles);
         }
+        if (tapeRes?.ok) {
+          const d = await tapeRes.json() as { p: string; q: string; T: number; m: boolean }[];
+          if (!cancelled && Array.isArray(d)) {
+            setTape(d.slice(-16).reverse().map(x => ({
+              p: Number.parseFloat(x.p),
+              q: Number.parseFloat(x.q),
+              t: x.T,
+              sell: x.m === true,
+            })).filter(x => x.p > 0));
+          }
+        } else {
+          setTape([]);
+        }
       } catch {}
     }, 300);
     return () => { cancelled = true; clearTimeout(kickoff); };
@@ -303,17 +322,17 @@ export default function PaperView() {
     const t = setTimeout(() => {
       setAccount(prev => {
         if (!prev || prev.pending.length === 0) return prev;
-        const venues = new Set(prev.pending.map(o => `${o.venue}:${o.coin}`));
         let cur = prev;
-        let changed = false;
+        let filled = false;
+        const venues = new Set(cur.pending.map(o => `${o.venue}:${o.coin}`));
         for (const key of venues) {
           const [v, coin] = key.split(":");
           const q = quoteFor(v as PaperVenue, coin);
           if (!q) continue;
           const r = matchLimitOrders(cur, q);
-          if (r.fills.length > 0) { cur = r.account; changed = true; }
+          if (r.fills.length > 0) { cur = r.account; filled = true; }
         }
-        if (!changed) return prev;
+        if (!filled) return prev;
         saveAccount(cur);
         return cur;
       });
@@ -392,6 +411,20 @@ export default function PaperView() {
 
   const valuation = useMemo(() => (account ? valuate(account, mark, fundMark) : null), [account, mark, fundMark]);
 
+  // TP/SL attachments checked on the same refresh cadence.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setAccount(prev => {
+        if (!prev) return prev;
+        const r = checkTpSl(prev, mark);
+        if (r.fills.length === 0) return prev;
+        saveAccount(r.account);
+        return r.account;
+      });
+    }, 700);
+    return () => clearTimeout(t);
+  }, [items, extMap, mark]);
+
   const assetStats = useMemo(() => {
     if (!account) return [];
     const map = new Map<string, { asset: string; pairs: number; spotRealized: number; fundRealized: number; fundOpen: number }>();
@@ -468,8 +501,7 @@ export default function PaperView() {
     setFundMsg(t("paper.filled"));
   };
 
-  const closeFund = (id: string) => {
-    if (!account) return;
+  const closeFund = (id: string) => {    if (!account) return;
     setFundMsg(null);
     const pos = account.funding.find(f => f.id === id);
     if (!pos) return;
@@ -585,6 +617,18 @@ export default function PaperView() {
     saveAccount(result.account);
   };
 
+  const setRowTpSl = (v: PaperVenue, coin: string, kind: "tp" | "sl", raw: string) => {
+    if (!account) return;
+    const trimmed = raw.trim();
+    const val = trimmed === "" ? null : Number.parseFloat(trimmed);
+    if (val !== null && !(val > 0)) return;
+    const pos = account.positions.find(p => p.venue === v && p.coin === coin);
+    if (!pos) return;
+    const result = setTpSl(account, v, coin, kind === "tp" ? val : (pos.tpUsd ?? null), kind === "sl" ? val : (pos.slUsd ?? null));
+    setAccount(result.account);
+    saveAccount(result.account);
+  };
+
   const selBtn = (active: boolean) =>
     `px-2.5 py-1 rounded-md text-xs whitespace-nowrap transition-colors ${active ? "bg-emerald-600 text-white" : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700"}`;
 
@@ -658,6 +702,12 @@ export default function PaperView() {
             placeholder="BTC"
             className="px-2.5 py-1 rounded-md text-xs bg-zinc-900 border border-zinc-700 font-mono w-24"
           />
+          <input
+            value={coinSearch}
+            onChange={e => setCoinSearch(e.target.value.toUpperCase())}
+            placeholder={t("paper.searchSymbol")}
+            className="px-2.5 py-1 rounded-md text-xs bg-zinc-900 border border-zinc-700 font-mono w-28 placeholder:text-zinc-600"
+          />
           <span className="ml-auto text-right">
             <b className="font-mono text-base">{quote ? fmtUsd(side === "buy" ? quote.askUsd : quote.bidUsd) : "-"}</b>
             {ticker24 && (
@@ -704,6 +754,19 @@ export default function PaperView() {
                     <span>{fmtUsd(p)}</span><span className="text-zinc-600">{fmtQty(q)}</span>
                   </button>
                 ))}
+              </div>
+            )}
+            {tape.length > 0 && (
+              <div className="mt-2">
+                <p className="text-[11px] text-zinc-500 mb-1">{t("paper.tape")}</p>
+                <div className="font-mono text-[11px] space-y-px max-h-36 overflow-y-auto">
+                  {tape.map((x, i) => (
+                    <div key={`${x.t}-${i}`} className="flex justify-between px-1.5">
+                      <span className={x.sell ? "text-red-300/90" : "text-emerald-300/90"}>{fmtUsd(x.p)}</span>
+                      <span className="text-zinc-600">{fmtQty(x.q)}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
@@ -933,7 +996,7 @@ export default function PaperView() {
           <p className="text-xs text-zinc-500">{t("paper.noPositions")}</p>
         ) : (
           <div className="overflow-x-auto rounded-lg border border-zinc-800">
-            <table className="w-full text-xs min-w-[640px]">
+            <table className="w-full text-xs min-w-[760px]">
               <thead>
                 <tr className="bg-zinc-900 text-zinc-400 text-left">
                   <th className="px-3 py-2">{t("paper.venue")}</th>
@@ -942,6 +1005,8 @@ export default function PaperView() {
                   <th className="px-3 py-2 text-right">{t("paper.avg")}</th>
                   <th className="px-3 py-2 text-right">{t("paper.mark")}</th>
                   <th className="px-3 py-2 text-right">uPnL</th>
+                  <th className="px-2 py-2 text-right">TP</th>
+                  <th className="px-2 py-2 text-right">SL</th>
                   <th className="px-3 py-2"></th>
                 </tr>
               </thead>
@@ -958,6 +1023,24 @@ export default function PaperView() {
                       <td className="px-3 py-2 text-right font-mono">{m !== null ? fmtUsd(m) : "-"}</td>
                       <td className={`px-3 py-2 text-right font-mono font-bold ${upnl >= 0 ? "text-emerald-400" : "text-red-400"}`}>
                         {upnl >= 0 ? "+" : ""}{fmtUsd(upnl)}
+                      </td>
+                      <td className="px-1 py-2">
+                        <input
+                          value={p.tpUsd ?? ""}
+                          onChange={e => setRowTpSl(p.venue, p.coin, "tp", e.target.value)}
+                          placeholder="TP"
+                          inputMode="decimal"
+                          className="w-20 px-1.5 py-0.5 rounded text-[11px] bg-zinc-950 border border-zinc-800 font-mono text-right"
+                        />
+                      </td>
+                      <td className="px-1 py-2">
+                        <input
+                          value={p.slUsd ?? ""}
+                          onChange={e => setRowTpSl(p.venue, p.coin, "sl", e.target.value)}
+                          placeholder="SL"
+                          inputMode="decimal"
+                          className="w-20 px-1.5 py-0.5 rounded text-[11px] bg-zinc-950 border border-zinc-800 font-mono text-right"
+                        />
                       </td>
                       <td className="px-3 py-2 text-right">
                         <button

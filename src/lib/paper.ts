@@ -16,6 +16,8 @@ export interface PaperPosition {
   qty: number;
   avgPriceUsd: number;
   realizedPnlUsd: number;
+  tpUsd?: number | null;
+  slUsd?: number | null;
 }
 
 export interface PaperFill {
@@ -361,6 +363,85 @@ export function matchLimitOrders(
   }
   acc.updatedAt = Date.now();
   return { account: acc, fills };
+}
+
+/** Close tracking helper shared by market/limit/TP-SL fills. */
+function settleSell(
+  acc: PaperAccount,
+  pos: PaperPosition,
+  qty: number,
+  price: number,
+  note?: string,
+): { fill: PaperFill; closedOut: boolean } {
+  const feeRate = PAPER_FEES[pos.venue];
+  const gross = qty * price;
+  const fee = gross * feeRate;
+  acc.cashUsd += gross - fee;
+  pos.realizedPnlUsd += (price - pos.avgPriceUsd) * qty - fee;
+  pos.qty -= qty;
+  const closedOut = pos.qty <= 1e-12;
+  acc.positions = acc.positions.filter(p => p.qty > 1e-12);
+  const fill: PaperFill = {
+    id: uid(), ts: Date.now(), venue: pos.venue, coin: pos.coin,
+    side: "sell", qty, priceUsd: price, feeUsd: fee, note,
+  };
+  acc.fills.unshift(fill);
+  if (closedOut) {
+    acc.closedTrades.unshift({
+      id: uid(), venue: pos.venue, coin: pos.coin,
+      qty, realizedPnlUsd: pos.realizedPnlUsd, closedAt: Date.now(),
+    });
+    acc.closedTrades = acc.closedTrades.slice(0, 300);
+  }
+  acc.fills = acc.fills.slice(0, 300);
+  return { fill, closedOut };
+}
+
+/** Check TP/SL attachments on open positions against a fresh mark.
+ * Full-position exits at market (exit the whole remaining qty). */
+export function checkTpSl(
+  account: PaperAccount,
+  mark: (venue: PaperVenue, coin: string) => number | null,
+): { account: PaperAccount; fills: PaperFill[] } {
+  if (!account.positions.some(p => p.tpUsd != null || p.slUsd != null)) {
+    return { account, fills: [] };
+  }
+  const acc: PaperAccount = {
+    ...account,
+    positions: account.positions.map(p => ({ ...p })),
+    fills: [...account.fills],
+    closedTrades: [...account.closedTrades],
+    pending: [...account.pending],
+  };
+  const fills: PaperFill[] = [];
+  for (const pos of [...acc.positions]) {
+    if (pos.tpUsd == null && pos.slUsd == null) continue;
+    const m = mark(pos.venue, pos.coin);
+    if (m === null || !(m > 0)) continue;
+    const hitTp = pos.tpUsd != null && m >= pos.tpUsd;
+    const hitSl = pos.slUsd != null && m <= pos.slUsd;
+    if (!hitTp && !hitSl) continue;
+    const qty = pos.qty;
+    if (!(qty > 0)) continue;
+    const { fill } = settleSell(acc, pos, qty, m, hitTp ? "take-profit" : "stop-loss");
+    fills.unshift(fill);
+  }
+  if (fills.length === 0) return { account, fills: [] };
+  acc.updatedAt = Date.now();
+  return { account: acc, fills };
+}
+
+export function setTpSl(
+  account: PaperAccount,
+  venue: PaperVenue,
+  coin: string,
+  tpUsd: number | null,
+  slUsd: number | null,
+): { account: PaperAccount } {
+  const positions = account.positions.map(p =>
+    p.venue === venue && p.coin === coin ? { ...p, tpUsd, slUsd } : p,
+  );
+  return { account: { ...account, positions, updatedAt: Date.now() } };
 }
 
 /** Pair (inventory-hedge) trade: buy on one venue while simultaneously selling
