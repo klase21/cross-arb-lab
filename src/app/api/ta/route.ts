@@ -103,6 +103,25 @@ export async function GET(req: Request) {
   const onlySymbol = (url.searchParams.get("symbol") ?? "").toUpperCase();
 
   try {
+    // Screener mode serves the precomputed 15-min snapshot (no per-request
+    // klines fan-out). Falls back to live compute when the collector is stale.
+    if (!onlySymbol) {
+      const { queryTaLatest } = await import("@/lib/db");
+      const snap = await queryTaLatest(interval, 45, 80).catch(() => null);
+      if (snap) {
+        const names = await getKoNames();
+        const readings = (snap.readings as TaReading[]).sort((a, b) => Math.abs(b.score) - Math.abs(a.score));
+        return NextResponse.json({
+          interval,
+          readings,
+          candles: undefined,
+          names,
+          count: readings.length,
+          source: "db",
+          timestamp: snap.collectedAt,
+        }, { headers: { "Cache-Control": "public, max-age=60" } });
+      }
+    }
     const [names, universe] = await Promise.all([getKoNames(), getUniverse()]);
     const targets = onlySymbol
       ? [{ symbol: onlySymbol, change: 0 as number | null }]
@@ -136,6 +155,7 @@ export async function GET(req: Request) {
       candles: onlySymbol ? (candleStore[onlySymbol] ?? []) : undefined,
       names,
       count: readings.length,
+      source: "live",
       timestamp: new Date().toISOString(),
     };
     return NextResponse.json(payload, { headers: { "Cache-Control": "public, max-age=30" } });

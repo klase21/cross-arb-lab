@@ -152,6 +152,65 @@ export interface ArbStatRow {
   bestNet: number;
 }
 
+// --- TA snapshots (latest-only per symbol+interval; screener serves from DB) ---
+
+export async function ensureTaSchema(): Promise<void> {
+  const sql = getClient();
+  if (!sql) throw new Error("DATABASE_URL is not set");
+  await sql`
+    CREATE TABLE IF NOT EXISTS ta_snapshots (
+      symbol TEXT NOT NULL,
+      interval TEXT NOT NULL,
+      bias TEXT NOT NULL,
+      score DOUBLE PRECISION NOT NULL,
+      reading JSONB NOT NULL,
+      collected_at TIMESTAMPTZ NOT NULL,
+      PRIMARY KEY (symbol, interval)
+    )`;
+}
+
+export async function upsertTaSnapshots(
+  rows: { symbol: string; interval: string; bias: string; score: number; reading: unknown }[],
+  collectedAt: Date,
+): Promise<number> {
+  const sql = getClient();
+  if (!sql || rows.length === 0) return 0;
+  const at = collectedAt.toISOString();
+  const result = await sql`
+    INSERT INTO ta_snapshots (symbol, interval, bias, score, reading, collected_at)
+    SELECT * FROM UNNEST(
+      ${rows.map(r => r.symbol)}::text[],
+      ${rows.map(r => r.interval)}::text[],
+      ${rows.map(r => r.bias)}::text[],
+      ${rows.map(r => r.score)}::float8[],
+      ${rows.map(r => JSON.stringify(r.reading))}::jsonb[],
+      ${rows.map(() => at)}::timestamptz[]
+    ) AS t(symbol, interval, bias, score, reading, collected_at)
+    ON CONFLICT (symbol, interval) DO UPDATE SET
+      bias = EXCLUDED.bias,
+      score = EXCLUDED.score,
+      reading = EXCLUDED.reading,
+      collected_at = EXCLUDED.collected_at
+    RETURNING 1`;
+  return Array.isArray(result) ? result.length : 0;
+}
+
+export async function queryTaLatest(
+  interval: string,
+  maxAgeMin: number,
+  minRows: number,
+): Promise<{ readings: unknown[]; collectedAt: string } | null> {
+  const sql = getClient();
+  if (!sql) return null;
+  const rows = (await sql`
+    SELECT reading, collected_at AS "collectedAt"
+    FROM ta_snapshots
+    WHERE interval = ${interval}
+      AND collected_at > now() - (${maxAgeMin}::int * interval '1 minute')
+    ORDER BY abs(score) DESC`) as { reading: unknown; collectedAt: string }[];
+  if (rows.length < minRows) return null;
+  return { readings: rows.map(r => r.reading), collectedAt: rows[0]?.collectedAt ?? new Date().toISOString() };
+}
 export async function queryArbStats(coin: string | null, sinceIso: string): Promise<ArbStatRow[]> {
   const sql = getClient();
   if (!sql) return [];
