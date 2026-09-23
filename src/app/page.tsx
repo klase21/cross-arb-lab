@@ -1,24 +1,26 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import KimchiView from "@/components/KimchiView";
-import DexArbitrageView from "@/components/DexArbitrageView";
+import ArbitrageView from "@/components/ArbitrageView";
 import SettingsView from "@/components/SettingsView";
-import CexCexView from "@/components/CexCexView";
 import SquareView from "@/components/SquareView";
-import TaView from "@/components/TaView";
-import FuturesView from "@/components/FuturesView";
+import TechView from "@/components/TechView";
 import PaperView from "@/components/PaperView";
 import PaperAutoRunner from "@/components/PaperAutoRunner";
 import { LangProvider, useLang } from "@/lib/i18n";
 
+const LEGACY_TABS: Record<string, "arb" | "tech"> = {
+  kimchi: "arb",
+  arbitrage: "arb",
+  cex: "arb",
+  ta: "tech",
+  futures: "tech",
+};
+
 const TAB_DEFS = [
-  { id: "kimchi" as const, labelKey: "tab.kimchi.label", titleKey: "tab.kimchi.title", descKey: "tab.kimchi.desc" },
-  { id: "arbitrage" as const, labelKey: "tab.arbitrage.label", titleKey: "tab.arbitrage.title", descKey: "tab.arbitrage.desc" },
-  { id: "cex" as const, labelKey: "tab.cex.label", titleKey: "tab.cex.title", descKey: "tab.cex.desc" },
+  { id: "arb" as const, labelKey: "tab.arb.label", titleKey: "tab.arb.title", descKey: "tab.arb.desc" },
   { id: "square" as const, labelKey: "tab.square.label", titleKey: "tab.square.title", descKey: "tab.square.desc" },
-  { id: "ta" as const, labelKey: "tab.ta.label", titleKey: "tab.ta.title", descKey: "tab.ta.desc" },
-  { id: "futures" as const, labelKey: "tab.futures.label", titleKey: "tab.futures.title", descKey: "tab.futures.desc" },
+  { id: "tech" as const, labelKey: "tab.tech.label", titleKey: "tab.tech.title", descKey: "tab.tech.desc" },
   { id: "paper" as const, labelKey: "tab.paper.label", titleKey: "tab.paper.title", descKey: "tab.paper.desc" },
   { id: "settings" as const, labelKey: "tab.settings.label", titleKey: "tab.settings.title", descKey: "tab.settings.desc" },
 ] as const;
@@ -26,14 +28,19 @@ const TAB_DEFS = [
 type TabId = (typeof TAB_DEFS)[number]["id"];
 
 function HomeInner() {
-  const [tab, setTab] = useState<TabId>("kimchi");
+  const [tab, setTab] = useState<TabId>("arb");
   const { t } = useLang();
 
   const TABS = TAB_DEFS.map(d => ({ id: d.id, label: t(d.labelKey), title: t(d.titleKey), desc: t(d.descKey) }));
 
   useEffect(() => {
-    const initial = new URLSearchParams(window.location.search).get("tab") as TabId | null;
-    if (initial && TABS.some(item => item.id === initial)) setTab(initial);
+    const initial = new URLSearchParams(window.location.search).get("tab");
+    if (!initial) return;
+    if (TABS.some(item => item.id === initial)) {
+      setTab(initial as TabId);
+    } else if (LEGACY_TABS[initial]) {
+      setTab(LEGACY_TABS[initial]);
+    }
   }, [TABS]);
 
   const switchTab = (id: TabId) => {
@@ -69,12 +76,9 @@ function HomeInner() {
           </div>
         </div>
 
-        {tab === "kimchi" && <KimchiView />}
-        {tab === "arbitrage" && <DexArbitrageView />}
-        {tab === "cex" && <CexCexView />}
+        {tab === "arb" && <ArbitrageView />}
         {tab === "square" && <SquareView />}
-        {tab === "ta" && <TaView />}
-        {tab === "futures" && <FuturesView />}
+        {tab === "tech" && <TechView />}
         {tab === "paper" && <PaperView />}
         {tab === "settings" && <SettingsView />}
       </main>

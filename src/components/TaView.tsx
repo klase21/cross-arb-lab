@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePollingInterval } from "@/lib/use-polling";
 import { useLang } from "@/lib/i18n";
 import CandleChart from "@/components/CandleChart";
+import { fmtPricePlain } from "@/lib/format";
 
 interface TaReason {
   code: string;
@@ -43,14 +44,13 @@ const INTERVALS = ["15m", "1h", "4h", "1d"] as const;
 function fmtPrice(n: number | null): string {
   if (n === null || !Number.isFinite(n)) return "-";
   if (n >= 1000) return n.toLocaleString("en-US", { maximumFractionDigits: 1 });
-  if (n >= 1) return n.toLocaleString("en-US", { maximumFractionDigits: 4 });
-  return n.toPrecision(4);
+  return fmtPricePlain(n);
 }
 
 function reasonValue(code: string, v: number | null): string {
   if (v === null || !Number.isFinite(v)) return "";
   if (code.startsWith("rsi")) return v.toFixed(1);
-  if (code.startsWith("macd")) return v.toPrecision(3);
+  if (code.startsWith("macd")) return fmtPricePlain(v);
   if (code.startsWith("bb")) return v.toFixed(2);
   return fmtPrice(v);
 }
@@ -186,7 +186,7 @@ export default function TaView() {
                 </div>
                 <div className="grid grid-cols-2 gap-1.5 text-[11px]">
                   <div className="bg-zinc-950 rounded p-1.5">RSI(14) <b className={`float-right ${rsiCls(detail.reading.rsi14)}`}>{detail.reading.rsi14?.toFixed(1) ?? "-"}</b></div>
-                  <div className="bg-zinc-950 rounded p-1.5">MACD hist <b className="float-right">{detail.reading.macdHist?.toPrecision(3) ?? "-"}</b></div>
+                  <div className="bg-zinc-950 rounded p-1.5">MACD hist <b className="float-right">{detail.reading.macdHist != null ? fmtPricePlain(detail.reading.macdHist) : "-"}</b></div>
                   <div className="bg-zinc-950 rounded p-1.5">BB %B <b className="float-right">{detail.reading.bbPctB?.toFixed(2) ?? "-"}</b></div>
                   <div className="bg-zinc-950 rounded p-1.5">EMA20/60 <b className="float-right">{detail.reading.ema20 !== null && detail.reading.ema60 !== null ? (detail.reading.ema20 > detail.reading.ema60 ? "▲" : "▼") : "-"}</b></div>
                 </div>
@@ -246,7 +246,7 @@ export default function TaView() {
                       </td>
                       <td className={`px-3 py-2 text-right ${rsiCls(r.rsi14)}`}>{r.rsi14?.toFixed(1) ?? "-"}</td>
                       <td className={`px-3 py-2 text-right ${r.macdHist !== null && r.macdHist >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                        {r.macdHist !== null ? `${r.macdHist >= 0 ? "▲" : "▼"} ${r.macdHist.toPrecision(2)}` : "-"}
+                        {r.macdHist !== null ? `${r.macdHist >= 0 ? "▲" : "▼"} ${fmtPricePlain(r.macdHist)}` : "-"}
                       </td>
                       <td className="px-3 py-2 text-right text-zinc-300">{r.bbPctB?.toFixed(2) ?? "-"}</td>
                       <td className="px-3 py-2 text-right text-zinc-300">

@@ -79,7 +79,8 @@ function fmtPrice(n: number | null): string {
   if (n === null || !Number.isFinite(n)) return "-";
   if (n >= 1000) return n.toLocaleString("en-US", { maximumFractionDigits: 1 });
   if (n >= 1) return n.toLocaleString("en-US", { maximumFractionDigits: 4 });
-  return n.toPrecision(4);
+  if (n > 0) return n.toLocaleString("en-US", { maximumFractionDigits: 8 });
+  return "-";
 }
 
 function fmtAgeShort(ms: number): string {

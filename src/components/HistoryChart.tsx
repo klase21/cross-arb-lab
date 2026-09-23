@@ -38,7 +38,7 @@ function Line({
   const x = (t: number) => 34 + ((t - t0) / Math.max(t1 - t0, 1)) * (w - 40);
   const y = (v: number) => 6 + (1 - (v - min) / span) * (h - 22);
   const zeroY = isPremium && min < 0 && max > 0 ? y(0) : null;
-  const fmtTick = (v: number) => (isPremium ? `${v.toFixed(1)}%` : v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v.toPrecision(3));
+  const fmtTick = (v: number) => (isPremium ? `${v.toFixed(1)}%` : v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v.toLocaleString("en-US", { maximumFractionDigits: 4 }));
   return (
     <svg viewBox={`0 0 ${w} ${h}`} className="w-full" style={{ height: h }}>
       {[0.15, 0.5, 0.85].map(f => {

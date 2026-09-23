@@ -62,7 +62,7 @@ function fmtUsd(n: number): string {
 
 function fmtPrice(n: number): string {
   if (n >= 1) return `$${n.toLocaleString("en-US", { maximumFractionDigits: 4 })}`;
-  if (n > 0) return `$${n.toPrecision(4)}`;
+  if (n > 0) return `$${n.toLocaleString("en-US", { maximumFractionDigits: 8 })}`;
   return "-";
 }
 

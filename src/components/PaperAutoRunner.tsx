@@ -25,6 +25,7 @@ import {
   valuate,
 } from "@/lib/paper";
 import { notifyBrowser } from "@/lib/notifications";
+import { fmtQty } from "@/lib/format";
 
 // Always-mounted background worker: turns detected opportunities into paper
 // fills on a 2-minute cycle. Real-order executors plug in where executePair /
@@ -100,7 +101,7 @@ export default function PaperAutoRunner() {
                 markTraded(`spot:${o.coin}`);
                 notifyBrowser(
                   `Auto PAPER ${o.coin}`,
-                  `${buyVenue} buy → ${sellVenue} sell ${qty.toPrecision(4)} @ prem ${o.premiumPct.toFixed(2)}%`,
+                  `${buyVenue} buy → ${sellVenue} sell ${fmtQty(qty)} @ prem ${o.premiumPct.toFixed(2)}%`,
                   `auto-spot-${o.coin}`,
                 );
               }

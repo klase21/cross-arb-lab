@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { usePollingInterval } from "@/lib/use-polling";
 import { useLang } from "@/lib/i18n";
 import { useDisplayCurrency } from "@/lib/use-currency";
+import { fmtQty } from "@/lib/format";
 
 interface CexArbitrageOpportunity {
   coin: string;
@@ -175,8 +176,8 @@ function RebalanceCalculator({ fxRate }: { fxRate: number }) {
             <div className="space-y-2 text-sm">
               <div className="flex justify-between"><span className="text-zinc-500">{lang === "ko" ? "코인 평가액 (매도 측)" : "Coin value (sell side)"}</span><span className="font-mono text-zinc-300">{fmtUsd(coinNotional)}</span></div>
               <div className="flex justify-between"><span className="text-zinc-500">{lang === "ko" ? "현금 (매수 측)" : "Cash (buy side)"}</span><span className="font-mono text-zinc-300">{fmtUsd(quote)}</span></div>
-              <div className="flex justify-between border-t border-zinc-800 pt-2"><span className="text-cyan-300 font-medium">{lang === "ko" ? "최대 헤지 규모" : "Max hedge size"}</span><span className="font-mono font-bold text-cyan-300">{fmtUsd(maxTradeNotional)} <span className="text-[10px] font-normal text-zinc-500">({maxTradeQty.toPrecision(5)} {lang === "ko" ? "코인" : "coin"})</span></span></div>
-              <div className="flex justify-between"><span className="text-zinc-500">{lang === "ko" ? "실행 후 잔액" : "After execution"}</span><span className="font-mono text-zinc-400 text-xs">{maxTradeQty.toPrecision(5)} {lang === "ko" ? "코인" : "coin"} + {fmtUsd(quoteRemaining)}</span></div>
+              <div className="flex justify-between border-t border-zinc-800 pt-2"><span className="text-cyan-300 font-medium">{lang === "ko" ? "최대 헤지 규모" : "Max hedge size"}</span><span className="font-mono font-bold text-cyan-300">{fmtUsd(maxTradeNotional)} <span className="text-[10px] font-normal text-zinc-500">({fmtQty(maxTradeQty)} {lang === "ko" ? "코인" : "coin"})</span></span></div>
+              <div className="flex justify-between"><span className="text-zinc-500">{lang === "ko" ? "실행 후 잔액" : "After execution"}</span><span className="font-mono text-zinc-400 text-xs">{fmtQty(maxTradeQty)} {lang === "ko" ? "코인" : "coin"} + {fmtUsd(quoteRemaining)}</span></div>
               <div className={`rounded-lg p-3 mt-2 ${balanced ? "bg-emerald-950/30 border border-emerald-800" : "bg-amber-950/30 border border-amber-800"}`}>
                 {balanced ? (
                   <p className="text-xs text-emerald-300">✓ {lang === "ko" ? "양쪽이 균형 상태입니다. 리밸런스 불필요." : "Balanced. No rebalance needed."}</p>
