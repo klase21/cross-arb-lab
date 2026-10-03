@@ -5,6 +5,7 @@ import { usePollingInterval } from "@/lib/use-polling";
 import { useLang } from "@/lib/i18n";
 import CandleChart from "@/components/CandleChart";
 import { fmtPricePlain } from "@/lib/format";
+import { sma, ema } from "@/lib/ta";
 
 interface TaReason {
   code: string;
@@ -72,7 +73,40 @@ function Chart({ candles, reading }: { candles: Candle[]; reading: TaReading }) 
   const extraLevels: number[] = [];
   if (reading.bbUpper !== null) extraLevels.push(reading.bbUpper);
   if (reading.bbLower !== null) extraLevels.push(reading.bbLower);
-  return <CandleChart candles={candles} extraLevels={extraLevels} height={288} />;
+  // MA overlays aligned to the chart's visible window (last 120 candles).
+  const closes = candles.slice(-120).map(c => c.c);
+  const ma20 = sma(closes, 20);
+  const e20 = ema(closes, 20);
+  const e60 = ema(closes, 60);
+  const last = (a: (number | null)[]) => (a.length > 0 ? a[a.length - 1] : null);
+  const legend = [
+    { label: "MA20", color: "#f59e0b", v: last(ma20) },
+    { label: "EMA20", color: "#38bdf8", v: last(e20) },
+    { label: "EMA60", color: "#a78bfa", v: last(e60) },
+  ];
+  return (
+    <div>
+      <div className="flex flex-wrap gap-3 text-[10px] text-zinc-500 mb-1.5">
+        {legend.map(l => (
+          <span key={l.label} className="inline-flex items-center gap-1">
+            <span className="inline-block w-3 h-0.5" style={{ background: l.color }} />
+            {l.label}
+            {l.v !== null && <span className="font-mono text-zinc-400">{fmtPrice(l.v)}</span>}
+          </span>
+        ))}
+      </div>
+      <CandleChart
+        candles={candles}
+        extraLevels={extraLevels}
+        height={288}
+        overlays={[
+          { values: ma20, color: "#f59e0b", width: 1.8 },
+          { values: e20, color: "#38bdf8" },
+          { values: e60, color: "#a78bfa" },
+        ]}
+      />
+    </div>
+  );
 }
 
 export default function TaView() {

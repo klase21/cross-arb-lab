@@ -16,12 +16,19 @@ export interface ChartLine {
   label?: string;
 }
 
-/** Candlestick chart with volume backdrop and optional horizontal levels. */
-export default function CandleChart({ candles, lines = [], height = 288, extraLevels = [] }: {
+export interface ChartOverlay {
+  values: (number | null)[];
+  color: string;
+  width?: number;
+}
+
+/** Candlestick chart with volume backdrop, horizontal levels, and MA overlays. */
+export default function CandleChart({ candles, lines = [], height = 288, extraLevels = [], overlays = [] }: {
   candles: ChartCandle[];
   lines?: ChartLine[];
   height?: number;
   extraLevels?: number[];
+  overlays?: ChartOverlay[];
 }) {
   const W = 900;
   const H = 300;
@@ -35,6 +42,11 @@ export default function CandleChart({ candles, lines = [], height = 288, extraLe
   }
   for (const v of extraLevels) {
     if (v > 0) { lows.push(v); highs.push(v); }
+  }
+  for (const o of overlays) {
+    for (const v of o.values) {
+      if (v !== null && v > 0 && Number.isFinite(v)) { lows.push(v); highs.push(v); }
+    }
   }
   const min = Math.min(...lows);
   const max = Math.max(...highs);
@@ -71,6 +83,16 @@ export default function CandleChart({ candles, lines = [], height = 288, extraLe
           </g>
         ) : null
       ))}
+      {overlays.map((o, oi) => {
+        const pts: string[] = [];
+        o.values.forEach((v, i) => {
+          if (v !== null && Number.isFinite(v) && i < data.length) {
+            pts.push(`${(i * cw + cw / 2).toFixed(1)},${y(v).toFixed(1)}`);
+          }
+        });
+        if (pts.length < 2) return null;
+        return <polyline key={`o${oi}`} points={pts.join(" ")} fill="none" stroke={o.color} strokeWidth={o.width ?? 1.5} />;
+      })}
     </svg>
   );
 }
