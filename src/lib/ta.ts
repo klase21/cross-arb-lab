@@ -200,6 +200,14 @@ export function analyze(symbol: string, candles: Candle[], change24h: number | n
     else if (price > e60) push("trend_mild_up", e60, 8, true);
     else push("trend_mild_down", e60, -8, false);
   }
+  // MA20 (SMA) position — dominant regime filter (max ±15). Below the 20-line
+  // the bear side leads even inside an intact uptrend (pullback counts as weak).
+  const sma20arr = sma(closes, 20);
+  const s20 = last(sma20arr);
+  if (s20 !== null && s20 > 0 && price > 0) {
+    if (price >= s20) push("ma20_above", s20, 15, true);
+    else push("ma20_below", s20, -15, false);
+  }
 
   score = Math.max(-100, Math.min(100, Math.round(score)));
   const bias: TaBias = score >= 20 ? "LONG" : score <= -20 ? "SHORT" : "NEUTRAL";

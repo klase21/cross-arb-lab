@@ -240,6 +240,8 @@ const dictionaries: Record<Lang, Dict> = {
     "ta.reason.trend_down": "역배열 하락 추세",
     "ta.reason.trend_mild_up": "EMA60 위 지지",
     "ta.reason.trend_mild_down": "EMA60 아래 저항",
+    "ta.reason.ma20_above": "MA20 위 (강세 우위)",
+    "ta.reason.ma20_below": "MA20 아래 (약세 우위)",
     "ta.disclaimer": "캔들 기반 기계적 점수(±100) — RSI·MACD·볼린저·추세 가중합. 투자 조언이 아닙니다.",
     // Paper
     "paper.setupTitle": "모의투자 시작",
@@ -647,6 +649,8 @@ const dictionaries: Record<Lang, Dict> = {
     "ta.reason.trend_down": "Downtrend below EMA20/60",
     "ta.reason.trend_mild_up": "Holding above EMA60",
     "ta.reason.trend_mild_down": "Capped below EMA60",
+    "ta.reason.ma20_above": "Above MA20 (bulls lead)",
+    "ta.reason.ma20_below": "Below MA20 (bears lead)",
     "ta.disclaimer": "Mechanical candle score (±100) — weighted RSI · MACD · Bollinger · trend. Not financial advice.",
     "paper.setupTitle": "Start paper trading",
     "paper.setupDesc": "Set virtual starting funds. Fills at live prices, no orders, no API keys.",
