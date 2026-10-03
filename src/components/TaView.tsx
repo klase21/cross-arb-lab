@@ -40,7 +40,7 @@ interface Candle {
   v: number;
 }
 
-const INTERVALS = ["15m", "1h", "4h", "1d"] as const;
+const INTERVALS = ["1h", "4h", "12h", "1d"] as const;
 
 function fmtPrice(n: number | null): string {
   if (n === null || !Number.isFinite(n)) return "-";
@@ -131,6 +131,7 @@ export default function TaView() {
   const [search, setSearch] = useState("");
   const [biasF, setBiasF] = useState<"all" | "LONG" | "SHORT" | "NEUTRAL">("all");
   const [selected, setSelected] = useState<string | null>(null);
+  const [detailTf, setDetailTf] = useState<string>("1h");
   const [detail, setDetail] = useState<{ reading: TaReading; candles: Candle[] } | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const intervalSec = usePollingInterval();
@@ -172,9 +173,9 @@ export default function TaView() {
 
   useEffect(() => {
     if (!selected) return;
-    const kickoff = setTimeout(() => { void loadDetail(selected, timeframe); }, 0);
+    const kickoff = setTimeout(() => { void loadDetail(selected, detailTf); }, 0);
     return () => clearTimeout(kickoff);
-  }, [selected, timeframe, loadDetail]);
+  }, [selected, detailTf, loadDetail]);
 
   const baseOf = (s: string) => s.replace(/USDT$/, "");
   const filtered = useMemo(() => {
@@ -211,9 +212,12 @@ export default function TaView() {
 
       {selected && (
         <section className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-3">
-          <div className="flex items-center gap-2 mb-2">
+          <div className="flex items-center gap-2 mb-2 flex-wrap">
             <b className="text-sm">${baseOf(selected)}</b>
             {names[baseOf(selected)] && <span className="text-xs text-zinc-500">{names[baseOf(selected)]}</span>}
+            {INTERVALS.map(iv => (
+              <button key={iv} onClick={() => { setDetailTf(iv); setDetail(null); }} className={`px-2 py-0.5 rounded-md text-[11px] transition-colors ${detailTf === iv ? "bg-emerald-600 text-white" : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700"}`}>{iv}</button>
+            ))}
             <button onClick={() => { setSelected(null); setDetail(null); }} className="ml-auto text-xs text-zinc-500 hover:text-zinc-200">✕</button>
           </div>
           {detailLoading && !detail ? (
@@ -279,6 +283,7 @@ export default function TaView() {
                         const next = selected === r.symbol ? null : r.symbol;
                         setSelected(next);
                         if (next === null) setDetail(null);
+                        else setDetailTf(timeframe);
                       }}
                       className={`border-t border-zinc-800 hover:bg-zinc-900/60 cursor-pointer ${selected === r.symbol ? "bg-zinc-900/80" : ""}`}
                     >

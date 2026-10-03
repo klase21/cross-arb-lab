@@ -9,7 +9,7 @@ export const maxDuration = 60;
 // Called every 15 min by the local scheduler. Precomputes TA readings for the
 // top-100 universe x 4 intervals so /api/ta serves from DB (no per-request
 // klines fan-out).
-const INTERVALS = ["15m", "1h", "4h", "1d"];
+const INTERVALS = ["1h", "4h", "12h", "1d"];
 const UNIVERSE_SIZE = 100;
 const KLINE_LIMIT = 200;
 const BATCH = 16;

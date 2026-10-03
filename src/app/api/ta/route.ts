@@ -9,7 +9,7 @@ const BINANCE_24H = `${BINANCE_SPOT}/api/v3/ticker/24hr`;
 const BINANCE_KLINES = `${BINANCE_SPOT}/api/v3/klines`;
 const UPBIT_MARKETS = "https://api.upbit.com/v1/market/all?isDetails=false";
 
-const INTERVALS = new Set(["15m", "1h", "4h", "1d"]);
+const INTERVALS = new Set(["1h", "4h", "12h", "1d"]);
 const UNIVERSE_SIZE = 100;
 const KLINE_LIMIT = 200;
 
