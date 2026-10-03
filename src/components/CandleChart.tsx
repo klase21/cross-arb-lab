@@ -23,17 +23,18 @@ export interface ChartOverlay {
 }
 
 /** Candlestick chart with volume backdrop, horizontal levels, and MA overlays. */
-export default function CandleChart({ candles, lines = [], height = 288, extraLevels = [], overlays = [] }: {
+export default function CandleChart({ candles, lines = [], height = 288, extraLevels = [], overlays = [], limit = 120 }: {
   candles: ChartCandle[];
   lines?: ChartLine[];
   height?: number;
   extraLevels?: number[];
   overlays?: ChartOverlay[];
+  limit?: number;
 }) {
   const W = 900;
   const H = 300;
   const PAD = 8;
-  const data = candles.slice(-120);
+  const data = limit > 0 ? candles.slice(-limit) : candles.slice();
   if (data.length < 2) return <p className="text-xs text-zinc-600">-</p>;
   const lows = data.map(c => c.l);
   const highs = data.map(c => c.h);

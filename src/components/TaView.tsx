@@ -70,11 +70,13 @@ function rsiCls(v: number | null): string {
 }
 
 function Chart({ candles, reading }: { candles: Candle[]; reading: TaReading }) {
+  const [window, setWindow] = useState(120);
   const extraLevels: number[] = [];
   if (reading.bbUpper !== null) extraLevels.push(reading.bbUpper);
   if (reading.bbLower !== null) extraLevels.push(reading.bbLower);
-  // MA overlays aligned to the chart's visible window (last 120 candles).
-  const closes = candles.slice(-120).map(c => c.c);
+  // MA overlays aligned to the visible window.
+  const visible = window > 0 ? candles.slice(-window) : candles.slice();
+  const closes = visible.map(c => c.c);
   const ma20 = sma(closes, 20);
   const e20 = ema(closes, 20);
   const e60 = ema(closes, 60);
@@ -84,9 +86,11 @@ function Chart({ candles, reading }: { candles: Candle[]; reading: TaReading }) 
     { label: "EMA20", color: "#38bdf8", v: last(e20) },
     { label: "EMA60", color: "#a78bfa", v: last(e60) },
   ];
+  const winBtn = (active: boolean) =>
+    `px-2 py-0.5 rounded-md text-[10px] whitespace-nowrap transition-colors ${active ? "bg-zinc-700 text-zinc-100" : "text-zinc-500 hover:text-zinc-300"}`;
   return (
     <div>
-      <div className="flex flex-wrap gap-3 text-[10px] text-zinc-500 mb-1.5">
+      <div className="flex flex-wrap items-center gap-3 text-[10px] text-zinc-500 mb-1.5">
         {legend.map(l => (
           <span key={l.label} className="inline-flex items-center gap-1">
             <span className="inline-block w-3 h-0.5" style={{ background: l.color }} />
@@ -94,11 +98,19 @@ function Chart({ candles, reading }: { candles: Candle[]; reading: TaReading }) 
             {l.v !== null && <span className="font-mono text-zinc-400">{fmtPrice(l.v)}</span>}
           </span>
         ))}
+        <span className="ml-auto flex items-center gap-1">
+          {([30, 60, 120, 0] as const).map(w => (
+            <button key={w} onClick={() => setWindow(w)} className={winBtn(window === w)}>
+              {w === 0 ? "전체" : `${w}봉`}
+            </button>
+          ))}
+        </span>
       </div>
       <CandleChart
         candles={candles}
         extraLevels={extraLevels}
         height={288}
+        limit={window}
         overlays={[
           { values: ma20, color: "#f59e0b", width: 1.8 },
           { values: e20, color: "#38bdf8" },
